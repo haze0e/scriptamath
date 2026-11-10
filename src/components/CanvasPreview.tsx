@@ -55,8 +55,15 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
     const paginated = pageEngine.paginate(blocks);
     setPagesData(paginated);
 
-    // Clamp current page index without blindly resetting to page 0 on re-randomize
-    setCurrentPageIdx((prev) => Math.min(prev, Math.max(0, paginated.length - 1)));
+    if (paginated.length > 0) {
+      const p = new URLSearchParams(window.location.search).get('page');
+      if (p) {
+        const targetPage = Math.max(0, Math.min(paginated.length - 1, parseInt(p, 10) - 1));
+        setCurrentPageIdx(targetPage);
+      } else {
+        setCurrentPageIdx((prev) => Math.min(prev, paginated.length - 1));
+      }
+    }
   }, [appState.rawInput, appState.handwriting.fontSize, appState.handwriting.randomSeed]);
 
   // Global keyboard shortcuts for smoother document navigation
@@ -101,12 +108,9 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
 
     setIsRendering(true);
 
-    // Render page with animation frame
-    requestAnimationFrame(() => {
-      const pageData = pagesData[currentPageIdx] || pagesData[0];
-      pageEngine.renderPage(canvas, pageData, appState, currentFont);
-      setIsRendering(false);
-    });
+    const pageData = pagesData[currentPageIdx] || pagesData[0];
+    pageEngine.renderPage(canvas, pageData, appState, currentFont);
+    setIsRendering(false);
   }, [
     currentPageIdx,
     pagesData,
@@ -116,6 +120,32 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
     appState.paper,
     appState.handwriting.randomSeed,
   ]);
+
+  // Automated batch rendering bridge for inspection & verification
+  useEffect(() => {
+    if (!currentFont || pagesData.length === 0) return;
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('autoSave') === '1') {
+      (async () => {
+        for (let i = 0; i < pagesData.length; i++) {
+          const offCanvas = document.createElement('canvas');
+          offCanvas.width = PAGE_WIDTH;
+          offCanvas.height = PAGE_HEIGHT;
+          pageEngine.renderPage(offCanvas, pagesData[i], appState, currentFont);
+          const dataUrl = offCanvas.toDataURL('image/png');
+          try {
+            await fetch('http://localhost:9999/save', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ page: i + 1, total: pagesData.length, dataUrl }),
+            });
+          } catch (e) {
+            console.error('AutoSave post failed for page', i + 1, e);
+          }
+        }
+      })();
+    }
+  }, [currentFont, pagesData.length]);
 
   const handleZoomIn = () => {
     setAppState((p) => ({ ...p, zoom: Math.min(2.0, p.zoom + 0.15) }));

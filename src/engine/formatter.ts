@@ -25,6 +25,7 @@ export interface MathOperator {
 export interface MathDelimiter {
   type: 'delimiter';
   char: '(' | ')' | '[' | ']' | '{' | '}' | '|';
+  isBig?: boolean;
 }
 
 export interface MathBoxed {
@@ -163,6 +164,11 @@ export function parseRawAIOutput(rawText: string): DocumentBlock[] {
   // Normalize align environments
   normalized = normalized.replace(/\\begin\{align\*?\}([\s\S]*?)\\end\{align\*?\}/g, (_match, inner) => {
     return '$$\n' + inner + '\n$$';
+  });
+
+  // Unwrap aligned environments inside $$ ... $$
+  normalized = normalized.replace(/\\begin\{aligned\*?\}([\s\S]*?)\\end\{aligned\*?\}/g, (_match, inner) => {
+    return inner;
   });
 
   // Collapse newlines inside matrix/cases environments so line.split('\n') never slices them in half!
@@ -356,10 +362,18 @@ export function parseRawAIOutput(rawText: string): DocumentBlock[] {
     }
 
     // Markdown Lists / Margin Items (Q1., Ans:, 1., **1.**, (a), •)
-    const boldNumMatch = line.match(/^(?:\*\*)?(?:(?:[Qq]uestion|[Pp]roblem)\s*(\d+)[:.]?|Q(\d+)[:.]?|(\d+)[\.:\)])\s*(?:\*\*)?\s*(.*)$/);
+    const boldNumMatch = line.match(
+      /^(?:\*\*(?:(?:[Qq]uestion|[Pp]roblem)\s*(\d+)[:.]?|Q(\d+)[:.]?|(\d+)[\.:\)])\*\*|(?:(?:[Qq]uestion|[Pp]roblem)\s*(\d+)[:.]?|Q(\d+)[:.]?|(\d+)[\.:\)]))\s*(.*)$/
+    );
     if (boldNumMatch) {
-      const qNum = boldNumMatch[1] || boldNumMatch[2] || boldNumMatch[3];
-      let remainder = boldNumMatch[4] ? boldNumMatch[4].trim() : '';
+      const qNum =
+        boldNumMatch[1] ||
+        boldNumMatch[2] ||
+        boldNumMatch[3] ||
+        boldNumMatch[4] ||
+        boldNumMatch[5] ||
+        boldNumMatch[6];
+      let remainder = boldNumMatch[7] ? boldNumMatch[7].trim() : '';
 
       // If line is just "**1.**", look ahead at next non-empty line so question content merges onto the same line
       if (!remainder && i + 1 < lines.length) {
@@ -377,7 +391,9 @@ export function parseRawAIOutput(rawText: string): DocumentBlock[] {
         }
       }
 
-      const isExplicitQ = Boolean(boldNumMatch[1] || boldNumMatch[2]);
+      const isExplicitQ = Boolean(
+        boldNumMatch[1] || boldNumMatch[2] || boldNumMatch[4] || boldNumMatch[5]
+      );
       const prefix = isExplicitQ ? `Q${qNum}.` : `${qNum}.`;
 
       blocks.push({
@@ -505,15 +521,24 @@ export function parseRawAIOutput(rawText: string): DocumentBlock[] {
  * Splits LaTeX block derivations into ruled-line steps with student prefixes.
  */
 function processMathBlock(mathContent: string, blocks: DocumentBlock[], baseId: number) {
-  // Protect matrix and cases environments from being split on \\ or stripped of &
-  const protectedMath = mathContent.replace(
-    /\\begin\{(bmatrix|pmatrix|vmatrix|cases)\}([\s\S]*?)\\end\{\1\}/g,
-    (match) => {
-      return match
-        .replace(/&/g, '__MATRIX_AMP__')
-        .replace(/\\\\/g, '__MATRIX_SLASH__');
-    }
-  );
+  // Protect matrix, cases, and substack environments from being split on \\ or stripped of &
+  const protectedMath = mathContent
+    .replace(
+      /\\begin\{(bmatrix|pmatrix|vmatrix|cases)\}([\s\S]*?)\\end\{\1\}/g,
+      (match) => {
+        return match
+          .replace(/&/g, '__MATRIX_AMP__')
+          .replace(/\\\\/g, '__MATRIX_SLASH__');
+      }
+    )
+    .replace(
+      /\\substack\{([\s\S]*?)\}/g,
+      (match) => {
+        return match
+          .replace(/&/g, '__MATRIX_AMP__')
+          .replace(/\\\\/g, '__MATRIX_SLASH__');
+      }
+    );
 
   // Split on double backslash \\
   const rawSteps = protectedMath.split(/\\\\/g);
@@ -729,7 +754,28 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
       continue;
     }
 
-    // 3. Boxed final answer: \boxed{...}
+    // 3. Substack: \substack{line1 \\ line2}
+    if (expr.startsWith('\\substack', i)) {
+      const b = extractBalanced(expr, i);
+      if (b) {
+        const unescapedInner = b.inner
+          .replace(/__MATRIX_SLASH__/g, '\\\\')
+          .replace(/__MATRIX_AMP__/g, '&');
+        const subLines = unescapedInner.split(/\\\\/g).map((s) => s.trim()).filter(Boolean);
+        const subTokens: MathToken[] = [];
+        for (let sIdx = 0; sIdx < subLines.length; sIdx++) {
+          if (sIdx > 0) {
+            subTokens.push({ type: 'text', text: ', ' });
+          }
+          subTokens.push(...parseLatexExpressionTokens(subLines[sIdx]));
+        }
+        tokens.push(...subTokens);
+        i = b.endIndex;
+        continue;
+      }
+    }
+
+    // 3b. Boxed final answer: \boxed{...}
     if (expr.startsWith('\\boxed', i)) {
       const b = extractBalanced(expr, i);
       if (b) {
@@ -815,12 +861,12 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
 
     // Vertical evaluation bar: \left\vert, \right\vert, \vert, \Big|, \Bigg|
     if (expr.startsWith('\\left\\vert', i)) {
-      tokens.push({ type: 'delimiter', char: '|' });
+      tokens.push({ type: 'delimiter', char: '|', isBig: true });
       i += 10;
       continue;
     }
     if (expr.startsWith('\\right\\vert', i)) {
-      tokens.push({ type: 'delimiter', char: '|' });
+      tokens.push({ type: 'delimiter', char: '|', isBig: true });
       i += 11;
       continue;
     }
@@ -831,43 +877,53 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
     }
     const bigBarMatch = expr.slice(i).match(/^\\(Big|Bigg|bigg|big)\|/);
     if (bigBarMatch) {
-      tokens.push({ type: 'delimiter', char: '|' });
+      tokens.push({ type: 'delimiter', char: '|', isBig: true });
       i += bigBarMatch[0].length;
       continue;
     }
 
     if (expr.startsWith('\\left(', i)) {
-      tokens.push({ type: 'delimiter', char: '(' });
+      tokens.push({ type: 'delimiter', char: '(', isBig: true });
       i += 6;
       continue;
     }
     if (expr.startsWith('\\right)', i)) {
-      tokens.push({ type: 'delimiter', char: ')' });
+      tokens.push({ type: 'delimiter', char: ')', isBig: true });
       i += 7;
       continue;
     }
     if (expr.startsWith('\\left[', i)) {
-      tokens.push({ type: 'delimiter', char: '[' });
+      tokens.push({ type: 'delimiter', char: '[', isBig: true });
       i += 6;
       continue;
     }
     if (expr.startsWith('\\right]', i)) {
-      tokens.push({ type: 'delimiter', char: ']' });
+      tokens.push({ type: 'delimiter', char: ']', isBig: true });
       i += 7;
       continue;
     }
-    if (expr.startsWith('\\left\\{', i) || expr.startsWith('\\{', i)) {
-      tokens.push({ type: 'delimiter', char: '{' });
-      i += expr.startsWith('\\left\\{', i) ? 7 : 2;
+    if (expr.startsWith('\\left\\{', i)) {
+      tokens.push({ type: 'delimiter', char: '{', isBig: true });
+      i += 7;
       continue;
     }
-    if (expr.startsWith('\\right\\}', i) || expr.startsWith('\\}', i)) {
+    if (expr.startsWith('\\right\\}', i)) {
+      tokens.push({ type: 'delimiter', char: '}', isBig: true });
+      i += 8;
+      continue;
+    }
+    if (expr.startsWith('\\{', i)) {
+      tokens.push({ type: 'delimiter', char: '{' });
+      i += 2;
+      continue;
+    }
+    if (expr.startsWith('\\}', i)) {
       tokens.push({ type: 'delimiter', char: '}' });
-      i += expr.startsWith('\\right\\}', i) ? 8 : 2;
+      i += 2;
       continue;
     }
     if (expr.startsWith('\\left|', i) || expr.startsWith('\\right|', i)) {
-      tokens.push({ type: 'delimiter', char: '|' });
+      tokens.push({ type: 'delimiter', char: '|', isBig: true });
       i += expr.startsWith('\\left|', i) ? 6 : 7;
       continue;
     }
@@ -1149,9 +1205,39 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
       i += 8;
       continue;
     }
-    if (expr.startsWith('\\neq', i)) {
-      tokens.push({ type: 'operator', symbol: '≠' });
+    if (expr.startsWith('\\forall', i)) {
+      tokens.push({ type: 'operator', symbol: '∀' });
+      i += 7;
+      continue;
+    }
+    if (expr.startsWith('\\exists', i)) {
+      tokens.push({ type: 'operator', symbol: '∃' });
+      i += 7;
+      continue;
+    }
+    if (expr.startsWith('\\setminus', i)) {
+      tokens.push({ type: 'operator', symbol: '\\' });
+      i += 9;
+      continue;
+    }
+    if (expr.startsWith('\\subset', i)) {
+      tokens.push({ type: 'operator', symbol: '⊂' });
+      i += 7;
+      continue;
+    }
+    if (expr.startsWith('\\cup', i)) {
+      tokens.push({ type: 'operator', symbol: '∪' });
       i += 4;
+      continue;
+    }
+    if (expr.startsWith('\\cap', i)) {
+      tokens.push({ type: 'operator', symbol: '∩' });
+      i += 4;
+      continue;
+    }
+    if (expr.startsWith('\\neq', i) || (expr.startsWith('\\ne', i) && !/^[a-zA-Z]/.test(expr.slice(i + 3)))) {
+      tokens.push({ type: 'operator', symbol: '≠' });
+      i += expr.startsWith('\\neq', i) ? 4 : 3;
       continue;
     }
     if (expr.startsWith('\\approx', i)) {

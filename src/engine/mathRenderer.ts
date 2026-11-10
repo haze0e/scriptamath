@@ -800,34 +800,56 @@ export class MathRenderer {
     inkColor: string
   ): number {
     const scale = fontSize / 28;
-    const w = 12.0 * scale;
-    const barY = y - fontSize * 0.42;
+    const w = 15.5 * scale;
+    // Lowercase pi x-height: matches lowercase letters (x, n, m)
+    const barY = y - fontSize * 0.50;
     const bottomY = y;
 
     ctx.save();
     ctx.strokeStyle = inkColor;
-    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
+    ctx.lineWidth = this.getBaseLineWidth(scale, 1.0);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    // 1. Horizontal top bar with left hook/wave
+    // 1. Horizontal top bar with organic wavy entry and natural overshoot
+    const barStartX = x - 0.8 * scale;
+    const barEndX = x + w + 1.8 * scale;
+    const waveLift = (1.2 + (this.noise.random() - 0.5) * 0.5) * scale;
     ctx.beginPath();
-    ctx.moveTo(x + 0.5 * scale, barY + 1.2 * scale);
-    ctx.quadraticCurveTo(x + 2.5 * scale, barY - 1.0 * scale, x + w * 0.5, barY);
-    ctx.lineTo(x + w + 1.0 * scale, barY + 0.5 * scale);
+    ctx.moveTo(barStartX, barY + waveLift);
+    ctx.bezierCurveTo(
+      x + 2.5 * scale,
+      barY - waveLift,
+      x + w * 0.55,
+      barY + 0.3 * scale,
+      barEndX,
+      barY + (this.noise.random() - 0.5) * 0.8 * scale
+    );
     ctx.stroke();
 
-    // 2. Left downward leg (slight outward curve)
+    // 2. Left downward leg (slight inward curve with gentle taper towards baseline)
+    const leftLegTopX = x + w * 0.28;
     ctx.beginPath();
-    ctx.moveTo(x + w * 0.28, barY + 0.5 * scale);
-    ctx.quadraticCurveTo(x + w * 0.24, y - fontSize * 0.20, x + w * 0.20, bottomY);
+    ctx.moveTo(leftLegTopX, barY + 1.0 * scale);
+    ctx.quadraticCurveTo(
+      x + w * 0.23,
+      y - fontSize * 0.24,
+      x + w * 0.20,
+      bottomY
+    );
     ctx.stroke();
 
-    // 3. Right downward leg with rightward foot hook
+    // 3. Right downward leg with natural student rightward curl/foot at baseline
+    const rightLegTopX = x + w * 0.68;
     ctx.beginPath();
-    ctx.moveTo(x + w * 0.72, barY + 0.5 * scale);
-    ctx.lineTo(x + w * 0.72, bottomY - 2.5 * scale);
-    ctx.quadraticCurveTo(x + w * 0.75, bottomY, x + w * 0.96, bottomY - 0.5 * scale);
+    ctx.moveTo(rightLegTopX, barY + 1.0 * scale);
+    ctx.lineTo(x + w * 0.70, bottomY - 3.2 * scale);
+    ctx.quadraticCurveTo(
+      x + w * 0.74,
+      bottomY + 0.6 * scale,
+      x + w * 0.98,
+      bottomY - 1.2 * scale
+    );
     ctx.stroke();
 
     ctx.restore();
@@ -1376,7 +1398,7 @@ export class MathRenderer {
     y2: number,
     lineWidth: number,
     inkColor: string,
-    wobbleAmount = 1.8,
+    wobbleAmount = 2.0,
     overshoot = 3
   ) {
     const dx = x2 - x1;
@@ -1395,7 +1417,11 @@ export class MathRenderer {
     const ey = y2 + sin * overshoot;
 
     const totalLen = len + overshoot * 2;
-    const segments = Math.max(3, Math.min(10, Math.floor(totalLen / 45)));
+    // Higher segment density ensures smooth curvature without jagged polygonal turns
+    const segments = Math.max(5, Math.min(24, Math.floor(totalLen / 25)));
+
+    // Biomechanical wrist arc: forearm/wrist pivot naturally arcs horizontal strokes slightly downward in the center
+    const wristBowMax = len > 70 ? (1.2 + this.noise.random() * 2.2) : 0.5;
 
     ctx.save();
     ctx.strokeStyle = inkColor;
@@ -1414,10 +1440,15 @@ export class MathRenderer {
       const baseX = sx + (ex - sx) * t;
       const baseY = sy + (ey - sy) * t;
 
-      // Perpendicular wobble
-      const wobble = (this.noise.random() - 0.5) * wobbleAmount;
-      const px = baseX - sin * wobble;
-      const py = baseY + cos * wobble;
+      // Parabolic bow (wrist pivot) + low-frequency organic wave + high-frequency tremor
+      const wristBow = Math.sin(Math.PI * t) * wristBowMax;
+      const organicWave = Math.sin(t * Math.PI * 2.8 + angle) * (wobbleAmount * 0.45);
+      const highFreqTremor = (this.noise.random() - 0.5) * (wobbleAmount * 0.7);
+      const totalDeviation = wristBow + organicWave + highFreqTremor;
+
+      // Perpendicular displacement: for horizontal strokes (cos > 0, sin = 0), this adds downward sag
+      const px = baseX - sin * totalDeviation;
+      const py = baseY + cos * totalDeviation;
 
       const midX = (prevPx + px) * 0.5;
       const midY = (prevPy + py) * 0.5;
@@ -1806,43 +1837,54 @@ export class MathRenderer {
     spanLines = 1
   ): number {
     const scale = fontSize / 28;
-    const height = fontSize * (spanLines > 1 ? 1.7 * spanLines : 1.35);
-    const topY = baselineY - height * 0.78;
-    const bottomY = baselineY + height * 0.28;
-    const hookRadius = 5.5 * scale;
+    const height = fontSize * (spanLines > 1 ? 1.8 * spanLines : 1.55);
+    const topY = baselineY - height * 0.72;
+    const bottomY = baselineY + height * 0.38;
+    const totalH = bottomY - topY;
+    const w = 14.5 * scale;
+    const cx = x + w * 0.45;
 
     ctx.save();
     ctx.strokeStyle = inkColor;
+    ctx.lineWidth = Math.max(1.8, 2.2 * scale);
     ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
 
-    // Hook top with heavier pooling
-    ctx.lineWidth = Math.max(1.8, 2.4 * scale);
+    // Single continuous sweeping stroke for the Leibniz integral sign
     ctx.beginPath();
-    ctx.arc(x + hookRadius, topY + hookRadius, hookRadius, Math.PI, Math.PI * 1.8, false);
-    ctx.stroke();
-
-    // Fast thin vertical diagonal sweep
-    ctx.lineWidth = Math.max(1.2, 1.5 * scale);
-    ctx.beginPath();
-    ctx.moveTo(x + hookRadius + Math.cos(Math.PI * 1.8) * hookRadius, topY + hookRadius + Math.sin(Math.PI * 1.8) * hookRadius);
+    // Start at top-right hook tip
+    ctx.moveTo(cx + 6.5 * scale, topY + 4.5 * scale);
+    // Upper hook: curves up, over to the left, and sweeps into the stem
     ctx.bezierCurveTo(
-      x + hookRadius * 0.5,
-      topY + height * 0.3,
-      x - hookRadius * 0.2,
-      bottomY - height * 0.3,
-      x - hookRadius * 0.3,
-      bottomY - hookRadius
+      cx + 4.5 * scale,
+      topY - 1.2 * scale,
+      cx - 1.5 * scale,
+      topY + 0.5 * scale,
+      cx - 1.0 * scale,
+      topY + totalH * 0.22
+    );
+    // Main stem: italic downward sweep with gentle forward slant (~8-10°)
+    ctx.bezierCurveTo(
+      cx + 0.6 * scale,
+      topY + totalH * 0.45,
+      cx + 1.2 * scale,
+      topY + totalH * 0.65,
+      cx - 0.5 * scale,
+      bottomY - totalH * 0.18
+    );
+    // Lower hook: curves under and to the left
+    ctx.bezierCurveTo(
+      cx - 1.5 * scale,
+      bottomY + 1.2 * scale,
+      cx - 6.0 * scale,
+      bottomY + 0.5 * scale,
+      cx - 7.5 * scale,
+      bottomY - 3.5 * scale
     );
     ctx.stroke();
 
-    // Bottom hook
-    ctx.lineWidth = Math.max(1.8, 2.4 * scale);
-    ctx.beginPath();
-    ctx.arc(x - hookRadius * 0.3 - hookRadius, bottomY - hookRadius, hookRadius, 0, Math.PI * 0.8, false);
-    ctx.stroke();
-
     ctx.restore();
-    return hookRadius * 2.5 + 4 * scale;
+    return w + 6 * scale;
   }
 
   /**
@@ -2529,5 +2571,159 @@ export class MathRenderer {
 
     ctx.restore();
     return 6 * scale;
+  }
+
+  /**
+   * Procedural Universal Quantifier (∀):
+   * Inverted capital A with a horizontal crossbar.
+   */
+  public drawForall(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string
+  ): number {
+    const scale = fontSize / 28;
+    const w = 13 * scale;
+    const topY = y - fontSize * 0.65;
+    const apexY = y + 0.5 * scale;
+    const crossY = y - fontSize * 0.32;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 1.0);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Left arm down to vertex
+    ctx.beginPath();
+    ctx.moveTo(x + 1 * scale, topY);
+    ctx.lineTo(x + w * 0.5, apexY);
+    // Right arm up from vertex
+    ctx.lineTo(x + w - 1 * scale, topY);
+    ctx.stroke();
+
+    // Horizontal crossbar
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.22, crossY);
+    ctx.lineTo(x + w * 0.78, crossY + (this.noise.random() - 0.5) * 0.8 * scale);
+    ctx.stroke();
+
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  /**
+   * Procedural Existential Quantifier (∃):
+   * Inverted capital E.
+   */
+  public drawExists(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string
+  ): number {
+    const scale = fontSize / 28;
+    const w = 11 * scale;
+    const topY = y - fontSize * 0.65;
+    const bottomY = y;
+    const midY = (topY + bottomY) * 0.5;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 1.0);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Vertical right stem
+    ctx.beginPath();
+    ctx.moveTo(x + w, topY);
+    ctx.lineTo(x + w, bottomY);
+    ctx.stroke();
+
+    // Top horizontal bar (pointing left)
+    ctx.beginPath();
+    ctx.moveTo(x + w, topY);
+    ctx.lineTo(x + 1 * scale, topY);
+    ctx.stroke();
+
+    // Middle horizontal bar (pointing left)
+    ctx.beginPath();
+    ctx.moveTo(x + w, midY);
+    ctx.lineTo(x + 2 * scale, midY);
+    ctx.stroke();
+
+    // Bottom horizontal bar (pointing left)
+    ctx.beginPath();
+    ctx.moveTo(x + w, bottomY);
+    ctx.lineTo(x + 1 * scale, bottomY);
+    ctx.stroke();
+
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  /**
+   * Procedural Set Union (∪)
+   */
+  public drawCup(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string
+  ): number {
+    const scale = fontSize / 28;
+    const w = 12 * scale;
+    const topY = y - fontSize * 0.45;
+    const bottomY = y - 1 * scale;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 1.0);
+    ctx.lineCap = 'round';
+
+    ctx.beginPath();
+    ctx.moveTo(x + 1 * scale, topY);
+    ctx.lineTo(x + 1 * scale, bottomY - 3 * scale);
+    ctx.quadraticCurveTo(x + w * 0.5, bottomY + 1 * scale, x + w - 1 * scale, bottomY - 3 * scale);
+    ctx.lineTo(x + w - 1 * scale, topY);
+    ctx.stroke();
+
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  /**
+   * Procedural Set Intersection (∩)
+   */
+  public drawCap(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string
+  ): number {
+    const scale = fontSize / 28;
+    const w = 12 * scale;
+    const topY = y - fontSize * 0.45;
+    const bottomY = y - 1 * scale;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 1.0);
+    ctx.lineCap = 'round';
+
+    ctx.beginPath();
+    ctx.moveTo(x + 1 * scale, bottomY);
+    ctx.lineTo(x + 1 * scale, topY + 3 * scale);
+    ctx.quadraticCurveTo(x + w * 0.5, topY - 1 * scale, x + w - 1 * scale, topY + 3 * scale);
+    ctx.lineTo(x + w - 1 * scale, bottomY);
+    ctx.stroke();
+
+    ctx.restore();
+    return w + 4 * scale;
   }
 }

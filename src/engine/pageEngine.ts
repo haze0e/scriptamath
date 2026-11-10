@@ -117,7 +117,12 @@ export class PageEngine {
     for (const block of blocks) {
       let neededLines = 1;
       if (block.type === 'heading') {
-        neededLines = block.level === 1 ? 2 : 1;
+        const matrixToken = block.tokens.find((t) => t.type === 'matrix') as MathMatrix | undefined;
+        if (matrixToken) {
+          neededLines = Math.ceil((matrixToken.cells.length * 36) / BASE_LINE_HEIGHT) + 1;
+        } else {
+          neededLines = block.level === 1 ? 2 : 1;
+        }
       } else if (block.type === 'math-step') {
         const hasFraction = block.tokens.some((t) => t.type === 'fraction');
         const matrixToken = block.tokens.find((t) => t.type === 'matrix') as MathMatrix | undefined;
@@ -251,11 +256,11 @@ export class PageEngine {
         textCtx,
         rX,
         TOP_MARGIN - 20,
-        rX + (this.noise.random() - 0.5) * 3,
+        rX + (this.noise.random() - 0.5) * 6,
         PAGE_HEIGHT - BOTTOM_MARGIN + 10,
-        1.2,
-        '#94a3b8',
-        1.8,
+        1.1,
+        bodyInkColor,
+        2.2,
         8
       );
 
@@ -406,8 +411,11 @@ export class PageEngine {
         );
         const renderedWidth = seqResult.width;
 
-        // Hand-drawn authentic student underlines with tremor and overshoot
-        if (pen.headingUnderline === 'single' || pen.headingUnderline === 'double') {
+        // Hand-drawn authentic student underlines (only for text section titles, never sliced across equations)
+        const hasMath = block.tokens.some((t) => t.type === 'fraction' || t.type === 'matrix' || t.type === 'root' || t.type === 'big-op');
+        const isSubproblem = /^\(?([0-9]+|[a-zA-Z]|[ivxlcdmIVXLCDM]+)\)/.test(block.rawText || '');
+
+        if (!hasMath && !isSubproblem && (pen.headingUnderline === 'single' || pen.headingUnderline === 'double')) {
           const uY = currentY + 6;
           this.mathRenderer.drawHandLine(
             textCtx,
@@ -417,7 +425,7 @@ export class PageEngine {
             uY + (this.noise.random() - 0.5) * 1.5,
             1.8,
             headingInkColor,
-            1.8,
+            2.0,
             4
           );
 
@@ -430,13 +438,13 @@ export class PageEngine {
               uY + 4.5 + (this.noise.random() - 0.5) * 1.5,
               1.4,
               headingInkColor,
-              1.8,
+              2.0,
               4
             );
           }
         }
 
-        currentY += BASE_LINE_HEIGHT * (block.level === 1 ? 1.5 : 1.2);
+        currentY += Math.max(seqResult.height + 14, BASE_LINE_HEIGHT * (block.level === 1 ? 1.5 : 1.2));
       } else if (block.type === 'margin-item') {
         // Question or Answer margin item: render authentic circled prefix or text label
         let startX = baseMarginX;
@@ -613,8 +621,9 @@ export class PageEngine {
           textRoughCanvas
         );
 
-        // Non-uniform vertical line spacing between algebra steps
-        const stepSpacingMult = 0.88 + this.noise.random() * 0.22;
+        // Non-uniform vertical line spacing between algebra steps (with comfortable clearance for matrices/cases)
+        const hasMatrix = block.tokens.some((t) => t.type === 'matrix');
+        const stepSpacingMult = hasMatrix ? (1.18 + this.noise.random() * 0.08) : (0.94 + this.noise.random() * 0.16);
         currentY += seqResult.height * stepSpacingMult;
       } else if (block.type === 'boxed-final') {
         // Boxed final answer block
@@ -940,7 +949,7 @@ export class PageEngine {
   ): { width: number; height: number } {
     let currX = startX;
     let currY = baseY;
-    let maxLineHeight = BASE_LINE_HEIGHT;
+    let currentLineMaxHeight = BASE_LINE_HEIGHT;
     let maxWidth = 0;
     let lineCount = 1;
     let wristState = this.initWristCluster(startX);
@@ -966,10 +975,11 @@ export class PageEngine {
         this.prevLineObstacles = this.currentLineObstacles;
         this.currentLineObstacles = [];
         maxWidth = Math.max(maxWidth, currX - startX);
-        currY += BASE_LINE_HEIGHT;
+        currY += Math.max(BASE_LINE_HEIGHT * 1.5, currentLineMaxHeight + 14);
         lineCount++;
         currX = startX + 45 + (this.noise.random() - 0.5) * 6 * handwriting.marginWander;
         wristState = this.initWristCluster(currX);
+        currentLineMaxHeight = BASE_LINE_HEIGHT;
       }
 
       const isTokUnder = this.prevLineObstacles.some(
@@ -1031,16 +1041,16 @@ export class PageEngine {
       currX += advanceX;
 
       if (token.type === 'fraction') {
-        maxLineHeight = Math.max(maxLineHeight, BASE_LINE_HEIGHT * 1.5);
+        currentLineMaxHeight = Math.max(currentLineMaxHeight, BASE_LINE_HEIGHT * 1.55);
       } else if (token.type === 'matrix') {
-        maxLineHeight = Math.max(maxLineHeight, token.cells.length * fontSize * 1.35);
+        currentLineMaxHeight = Math.max(currentLineMaxHeight, token.cells.length * fontSize * 1.5);
       }
     }
 
     maxWidth = Math.max(maxWidth, currX - startX);
     return {
       width: maxWidth,
-      height: lineCount * maxLineHeight,
+      height: (currY - baseY) + currentLineMaxHeight,
     };
   }
 
@@ -1089,7 +1099,7 @@ export class PageEngine {
     }
 
     if (token.type === 'delimiter') {
-      return this.renderDelimiter(ctx, token.char, x, y, fontSize, inkColor);
+      return this.renderDelimiter(ctx, token.char, x, y, fontSize, inkColor, token.isBig);
     }
 
     if (token.type === 'operator') {
@@ -1214,10 +1224,11 @@ export class PageEngine {
     x: number,
     y: number,
     fontSize: number,
-    inkColor: string
+    inkColor: string,
+    isBig = false
   ): number {
-    const topY = y - fontSize * 0.72;
-    const bottomY = y + fontSize * 0.24;
+    const topY = isBig ? y - fontSize * 1.15 : y - fontSize * 0.72;
+    const bottomY = isBig ? y + fontSize * 0.55 : y + fontSize * 0.24;
 
     if (char === '(' || char === ')') {
       return this.mathRenderer.drawParenthesis(ctx, x, topY, bottomY, char === '(', inkColor, fontSize);
@@ -1293,6 +1304,10 @@ export class PageEngine {
     if (symbol === 'Δ') return this.mathRenderer.drawDelta(ctx, x, y, fontSize, inkColor);
     if (symbol === '∇') return this.mathRenderer.drawNabla(ctx, x, y, fontSize, inkColor);
     if (symbol === 'ℒ') return this.mathRenderer.drawLaplaceL(ctx, x, y, fontSize, inkColor);
+    if (symbol === '∀' || symbol === '\\forall') return this.mathRenderer.drawForall(ctx, x, y, fontSize, inkColor);
+    if (symbol === '∃' || symbol === '\\exists') return this.mathRenderer.drawExists(ctx, x, y, fontSize, inkColor);
+    if (symbol === '∪' || symbol === '\\cup') return this.mathRenderer.drawCup(ctx, x, y, fontSize, inkColor);
+    if (symbol === '∩' || symbol === '\\cap') return this.mathRenderer.drawCap(ctx, x, y, fontSize, inkColor);
 
     // Default symbol draw as text safely
     return this.renderWordOrChars(ctx, font, symbol, x, y, fontSize, inkColor, lineProgress, handwriting, roughCanvas);
@@ -1459,6 +1474,8 @@ export class PageEngine {
     const startScriptX = currX;
     let maxScriptAdvance = 0;
 
+    const isDelimiterScript = typeof base === 'string' && base === '';
+
     // Special case for \lim: subscript is centered directly underneath 'lim'
     if (isLim && sub && sub.length > 0) {
       const subWidth = this.estimateTokensWidth(font, sub, scriptFontSize);
@@ -1470,9 +1487,10 @@ export class PageEngine {
       }
       maxScriptAdvance = Math.max(0, subWidth - baseWidth);
     } else {
-      // Standard subscript
+      // Standard subscript (or bottom evaluation limit for delimiters)
       if (sub && sub.length > 0) {
-        const subY = y + fontSize * 0.22 + (this.noise.random() - 0.5) * 1.5;
+        const subOffset = isDelimiterScript ? fontSize * 0.38 : fontSize * 0.22;
+        const subY = y + subOffset + (this.noise.random() - 0.5) * 1.5;
         let sx = startScriptX;
         for (const t of sub) {
           sx += this.renderSingleToken(ctx, font, t, sx, subY, scriptFontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
@@ -1481,9 +1499,10 @@ export class PageEngine {
       }
     }
 
-    // Superscript
+    // Superscript (or top evaluation limit for delimiters)
     if (sup && sup.length > 0) {
-      const supY = y - fontSize * 0.44 + (this.noise.random() - 0.5) * 1.5;
+      const supOffset = isDelimiterScript ? fontSize * 0.78 : fontSize * 0.44;
+      const supY = y - supOffset + (this.noise.random() - 0.5) * 1.5;
       let sx = startScriptX;
       for (const t of sup) {
         sx += this.renderSingleToken(ctx, font, t, sx, supY, scriptFontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
@@ -1516,26 +1535,28 @@ export class PageEngine {
       const intWidth = this.mathRenderer.drawIntegral(ctx, x, y, fontSize, inkColor);
 
       // Lower limit at bottom-right of lower hook
+      let lowerAdvance = 0;
       if (token.lower && token.lower.length > 0) {
-        const lowerY = y + fontSize * 0.28;
-        let lx = x + intWidth - 4;
+        const lowerY = y + fontSize * 0.36;
+        let lx = x + intWidth * 0.65;
         for (const t of token.lower) {
           lx += this.renderSingleToken(ctx, font, t, lx, lowerY, limitFontSize, inkColor, lineProgress, handwriting, roughCanvas);
         }
+        lowerAdvance = lx - x;
       }
 
       // Upper limit at top-right of upper hook
       let upperAdvance = 0;
       if (token.upper && token.upper.length > 0) {
-        const upperY = y - fontSize * 0.82;
-        let ux = x + intWidth;
+        const upperY = y - fontSize * 0.78;
+        let ux = x + intWidth * 0.95;
         for (const t of token.upper) {
           ux += this.renderSingleToken(ctx, font, t, ux, upperY, limitFontSize, inkColor, lineProgress, handwriting, roughCanvas);
         }
-        upperAdvance = ux - (x + intWidth);
+        upperAdvance = ux - x;
       }
 
-      return intWidth + upperAdvance + 4;
+      return Math.max(intWidth + 4, lowerAdvance + 4, upperAdvance + 4);
     } else {
       // \sum or \prod
       const opWidth =
@@ -2251,7 +2272,7 @@ export class PageEngine {
       ) return 16 * scale;
       if (token.symbol === '\\dots' || token.symbol === '\\cdots' || token.symbol === '\\ldots' || token.symbol === '...') return 20 * scale;
       if (token.symbol === '∞') return 22 * scale;
-      if (token.symbol === 'Δ' || token.symbol === '∇' || token.symbol === 'ℒ') return 18 * scale;
+      if (token.symbol === 'Δ' || token.symbol === '∇' || token.symbol === 'ℒ' || token.symbol === '∀' || token.symbol === '∃' || token.symbol === '∪' || token.symbol === '∩') return 18 * scale;
       return 18 * scale;
     }
     if (token.type === 'big-op') {
