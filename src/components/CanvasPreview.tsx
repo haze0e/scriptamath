@@ -12,12 +12,14 @@ import {
   Layers,
   CheckCircle2,
   Loader2,
+  Archive,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import opentype from 'opentype.js';
 import { AppState } from '../types';
 import { parseRawAIOutput } from '../engine/formatter';
 import { PageEngine, PageLayoutData, PAGE_WIDTH, PAGE_HEIGHT } from '../engine/pageEngine';
+import { ExportModal } from './ExportModal';
 
 interface CanvasPreviewProps {
   appState: AppState;
@@ -39,6 +41,7 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
     const p = new URLSearchParams(window.location.search).get('page');
     return p ? Math.max(0, parseInt(p, 10) - 1) : 0;
   });
+  const [exportModalFormat, setExportModalFormat] = useState<'pdf' | 'zip' | null>(null);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [isRendering, setIsRendering] = useState<boolean>(false);
   const [exportSuccess, setExportSuccess] = useState<boolean>(false);
@@ -276,32 +279,28 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
           <button
             onClick={handleExportCurrentPNG}
             className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#262d42] bg-[#131722] hover:bg-[#1c2336] text-slate-300 hover:text-white text-xs transition-colors"
+            title="Download Current Page as PNG"
           >
             <Download className="w-3.5 h-3.5" />
             <span>PNG</span>
           </button>
 
           <button
-            onClick={handleExportPDF}
-            disabled={isExporting}
-            className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-lg shadow-blue-600/25 transition-all disabled:opacity-50"
+            onClick={() => setExportModalFormat('zip')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#262d42] bg-[#131722] hover:bg-[#1c2336] text-amber-300 hover:text-amber-200 text-xs font-medium transition-colors"
+            title="Export Multi-Page High-DPI ZIP Archive"
           >
-            {isExporting ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Bundling PDF...</span>
-              </>
-            ) : exportSuccess ? (
-              <>
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
-                <span>Downloaded!</span>
-              </>
-            ) : (
-              <>
-                <FileDown className="w-3.5 h-3.5" />
-                <span>Export Multi-Page PDF</span>
-              </>
-            )}
+            <Archive className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden sm:inline">Export</span> ZIP
+          </button>
+
+          <button
+            onClick={() => setExportModalFormat('pdf')}
+            className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-lg shadow-blue-600/25 transition-all"
+            title="Export Multi-Page PDF"
+          >
+            <FileDown className="w-3.5 h-3.5" />
+            <span>Export PDF</span>
           </button>
         </div>
       </div>
@@ -321,14 +320,16 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
 
         {/* Scaled Notebook Sheet Canvas with Precise Layout Bounds */}
         <div
-          className="relative shrink-0 shadow-2xl transition-all duration-100 ease-out my-auto"
+          className={`relative shrink-0 transition-all duration-100 ease-out my-auto ${
+            pagesData.length > 1 || currentPageIdx === 0 ? 'paper-stack' : 'shadow-2xl'
+          }`}
           style={{
             width: `${Math.round(PAGE_WIDTH * appState.zoom)}px`,
             height: `${Math.round(PAGE_HEIGHT * appState.zoom)}px`,
           }}
         >
           <div
-            className="origin-top-left transition-transform duration-100 ease-out rounded-sm shadow-2xl"
+            className="origin-top-left transition-transform duration-100 ease-out rounded-sm shadow-2xl relative"
             style={{
               transform: `scale(${appState.zoom})`,
               width: `${PAGE_WIDTH}px`,
@@ -341,9 +342,39 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
               height={PAGE_HEIGHT}
               className="w-full h-full rounded-sm block bg-white shadow-2xl"
             />
+
+            {/* Sticky Note Overlay (Handwritten style) */}
+            {appState.paper.showStickyNote && currentPageIdx === 0 && (
+              <div
+                className="absolute bottom-28 right-12 w-48 min-h-[140px] bg-yellow-200/95 text-amber-950 p-4 shadow-xl z-20 flex flex-col select-none rounded border border-yellow-300 pointer-events-none"
+                style={{
+                  transform: 'rotate(-2.5deg)',
+                  boxShadow: '3px 8px 24px rgba(0,0,0,0.18)',
+                }}
+              >
+                <div className="text-[10px] uppercase font-black tracking-widest text-yellow-800/60 mb-1">
+                  Note:
+                </div>
+                <div className="text-sm font-semibold leading-snug">
+                  {appState.paper.stickyNoteText || "Don't forget to submit before 5 PM!"}
+                </div>
+                <div className="absolute top-0 left-0 right-0 h-3 bg-yellow-300/40 rounded-t" />
+              </div>
+            )}
           </div>
         </div>
       </div>
+
+      {/* High-Resolution Animated Export Progress Modal */}
+      <ExportModal
+        isOpen={exportModalFormat !== null}
+        onClose={() => setExportModalFormat(null)}
+        format={exportModalFormat || 'pdf'}
+        pagesData={pagesData}
+        appState={appState}
+        currentFont={currentFont}
+        pageEngine={pageEngine}
+      />
     </main>
   );
 };

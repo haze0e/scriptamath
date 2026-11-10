@@ -66,6 +66,67 @@ export class InkAndScanPipeline {
   }
 
   /**
+   * Procedural coffee mug rings, inner wash, and liquid drip droplets.
+   */
+  public drawCoffeeStain(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    seed: number,
+    intensity: number = 1.0
+  ) {
+    if (intensity <= 0) return;
+    ctx.save();
+
+    // Deterministic placement on top-right or bottom-right corner
+    const rand = (s: string) => {
+      let h = 0;
+      const str = `${seed}-${s}`;
+      for (let i = 0; i < str.length; i++) h = (h << 5) - h + str.charCodeAt(i);
+      return Math.abs(Math.sin(h) * 10000) % 1;
+    };
+
+    const posX = width - 180 + (rand('x') - 0.5) * 80;
+    const posY = 180 + (rand('y') - 0.5) * 80;
+    const radius = 65 + rand('r') * 20;
+
+    ctx.translate(posX, posY);
+    ctx.rotate(rand('rot') * Math.PI * 2);
+
+    // Composite multiply for realistic ink/paper absorption
+    ctx.globalCompositeOperation = 'multiply';
+
+    // 1. Outer coffee ring (darker perimeter where liquid pooled)
+    ctx.strokeStyle = `rgba(110, 68, 30, ${0.14 * intensity})`;
+    ctx.lineWidth = 4 + rand('w') * 3;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius, radius * (0.92 + rand('e') * 0.1), 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 2. Faint inner liquid wash
+    ctx.fillStyle = `rgba(130, 85, 45, ${0.03 * intensity})`;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius - 2, radius * 0.92 - 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 3. One or two accidental drip droplets
+    for (let i = 0; i < 2; i++) {
+      const dropAngle = rand(`drop-a-${i}`) * Math.PI * 2;
+      const dropDist = radius + 15 + rand(`drop-d-${i}`) * 25;
+      const dx = Math.cos(dropAngle) * dropDist;
+      const dy = Math.sin(dropAngle) * dropDist;
+      const dropR = 2 + rand(`drop-r-${i}`) * 2.5;
+
+      ctx.fillStyle = `rgba(105, 65, 28, ${0.12 * intensity})`;
+      ctx.beginPath();
+      ctx.arc(dx, dy, dropR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  /**
    * Indian College Ruled A4 Sheet:
    * - Light blue horizontal ruling lines (~32px line height)
    * - Double red vertical margin line at left (e.g. at x=150 and x=156)

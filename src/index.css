@@ -40,3 +40,39 @@
 .canvas-stage {
   will-change: transform;
 }
+
+/* 3D Paper Stack Desk Elevation */
+.paper-stack {
+  position: relative;
+  box-shadow: 
+    0 1px 1px rgba(0,0,0,0.06),
+    0 2px 4px rgba(0,0,0,0.06),
+    0 8px 16px rgba(0,0,0,0.08),
+    0 16px 32px rgba(0,0,0,0.12);
+}
+
+.paper-stack::before,
+.paper-stack::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #fbfbf9;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: inherit;
+  z-index: -1;
+  pointer-events: none;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Sheet 2 underneath */
+.paper-stack::before {
+  transform: translate(5px, 5px) rotate(0.5deg);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+}
+
+/* Sheet 3 underneath */
+.paper-stack::after {
+  transform: translate(10px, 10px) rotate(1.1deg);
+  opacity: 0.7;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+}

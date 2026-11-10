@@ -1,6 +1,7 @@
 import opentype from 'opentype.js';
 import rough from 'roughjs';
 import jsPDF from 'jspdf';
+import JSZip from 'jszip';
 import { AppState } from '../types';
 import { SeededNoise } from './noise';
 import { GlyphMutator, GlyphDrawOptions } from './glyphMutator';
@@ -137,7 +138,15 @@ export class PageEngine {
         neededLines = Math.max(1, Math.ceil(textLen / 70));
       }
 
-      if (currentLineCount + neededLines > maxLinesPerPage && currentPageBlocks.length > 0) {
+      // Orphan protection: If a heading or margin-item question label would sit alone on the last lines, push it
+      const isHeaderOrQuestion = block.type === 'heading' || block.type === 'margin-item';
+      const isOrphan = isHeaderOrQuestion && (currentLineCount + neededLines >= maxLinesPerPage - 1);
+
+      // Widow protection: If a boxed-final answer is about to be split/squeezed across boundary
+      const isBoxedFinal = block.type === 'boxed-final';
+      const isWidowFinal = isBoxedFinal && (currentLineCount + neededLines > maxLinesPerPage - 1);
+
+      if ((currentLineCount + neededLines > maxLinesPerPage || isOrphan || isWidowFinal) && currentPageBlocks.length > 0) {
         pages.push({
           pageNumber: pages.length + 1,
           blocks: currentPageBlocks,
@@ -215,7 +224,27 @@ export class PageEngine {
     this.currentLineObstacles = [];
     this.prevLineObstacles = [];
 
-    // Optional Right-Margin Rough Calculation Column
+    // Sideways Margin Annotation / Gutter Scribble (Handwritten style)
+    if (paper.marginAnnotation && pageData.pageNumber === 1) {
+      textCtx.save();
+      textCtx.translate(75, TOP_MARGIN + 280);
+      textCtx.rotate(-Math.PI / 2);
+      this.renderWordOrChars(
+        textCtx,
+        font,
+        paper.marginAnnotation,
+        0,
+        0,
+        14,
+        pen.bodyColorHex,
+        0.15,
+        { ...handwriting, slantAngle: (handwriting.slantAngle ?? 0) - 4 },
+        textRoughCanvas
+      );
+      textCtx.restore();
+    }
+
+    // Dynamic Right-Margin Rough Calculation Column
     if (paper.roughWorkColumn) {
       const rX = PAGE_WIDTH - 165;
       this.mathRenderer.drawHandLine(
@@ -255,57 +284,46 @@ export class PageEngine {
         3
       );
 
-      // Intermediate arithmetic scratch step 1
-      const s1Y = TOP_MARGIN + BASE_LINE_HEIGHT * 3;
-      const rw1 = this.renderWordOrChars(
-        textCtx,
-        font,
-        '16 - 12 = 4',
-        rX + 14,
-        s1Y,
-        13,
-        bodyInkColor,
-        0.25,
-        handwriting,
-        textRoughCanvas
-      );
-      this.mathRenderer.drawHandLine(
-        textCtx,
-        rX + 10,
-        s1Y + 2,
-        rX + 14 + rw1 + 4,
-        s1Y - 12,
-        1.4,
-        bodyInkColor,
-        1.5,
-        2
-      );
+      const scratchLines = paper.customRoughWork && paper.customRoughWork.length > 0
+        ? paper.customRoughWork
+        : ['14 * 6 = 84', '84 - 23 = 61', '√61 ≈ 7.81'];
 
-      // Intermediate arithmetic scratch step 2
-      const s2Y = TOP_MARGIN + BASE_LINE_HEIGHT * 7;
-      const rw2 = this.renderWordOrChars(
-        textCtx,
-        font,
-        '√4 = 2',
-        rX + 16,
-        s2Y,
-        13,
-        bodyInkColor,
-        0.5,
-        handwriting,
-        textRoughCanvas
-      );
-      this.mathRenderer.drawHandLine(
-        textCtx,
-        rX + 12,
-        s2Y + 2,
-        rX + 16 + rw2 + 4,
-        s2Y - 12,
-        1.4,
-        bodyInkColor,
-        1.5,
-        2
-      );
+      let scratchY = TOP_MARGIN + BASE_LINE_HEIGHT * 2.5;
+
+      scratchLines.forEach((line, sIdx) => {
+        if (scratchY > PAGE_HEIGHT - BOTTOM_MARGIN - 40) return;
+
+        // Small scratch font size (11 - 13px)
+        const scratchW = this.renderWordOrChars(
+          textCtx,
+          font,
+          line,
+          rX + 14 + (this.noise.random() - 0.5) * 4,
+          scratchY,
+          12.5,
+          bodyInkColor,
+          0.2 + (sIdx * 0.1),
+          { ...handwriting, slantAngle: (handwriting.slantAngle ?? 0) + 3 },
+          textRoughCanvas
+        );
+
+        // 45% probability of a casual strike-through line (student crossed out scratch math)
+        if (this.noise.random() < 0.45) {
+          this.mathRenderer.drawHandLine(
+            textCtx,
+            rX + 10,
+            scratchY + 2,
+            rX + 14 + scratchW + 4,
+            scratchY - 10,
+            1.2,
+            bodyInkColor,
+            1.4,
+            2
+          );
+        }
+
+        scratchY += BASE_LINE_HEIGHT * 1.8;
+      });
     }
 
     let consecutiveMathSteps = 0;
@@ -675,6 +693,11 @@ export class PageEngine {
 
     // 5. Composite primary student handwriting layer onto paper
     ctx.drawImage(textCanvas, 0, 0);
+
+    // 5.5 Optional Procedural Coffee Mug Ring Stain (on front sheet)
+    if (paper.showCoffeeStain && pageData.pageNumber === 1) {
+      this.inkAndScan.drawCoffeeStain(ctx, PAGE_WIDTH, PAGE_HEIGHT, handwriting.randomSeed, 1.0);
+    }
 
     // 6. Apply Camera / CamScanner Scan Post-Processing Filters
     this.inkAndScan.applyScanPostProcessing(ctx, PAGE_WIDTH, PAGE_HEIGHT, paper);
@@ -2449,8 +2472,8 @@ export class PageEngine {
   public async exportToPDF(
     canvases: HTMLCanvasElement[],
     title = 'ScriptaMath_Assignment'
-  ): Promise<void> {
-    if (canvases.length === 0) return;
+  ): Promise<Blob> {
+    if (canvases.length === 0) return new Blob();
 
     const pdf = new jsPDF({
       orientation: 'portrait',
@@ -2466,6 +2489,34 @@ export class PageEngine {
       pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
     }
 
+    const blob = pdf.output('blob');
     pdf.save(`${title}.pdf`);
+    return blob;
+  }
+
+  /**
+   * Exports multi-page canvas document as a ZIP archive of high-res PNG images via JSZip.
+   */
+  public async exportToZIP(
+    canvases: HTMLCanvasElement[],
+    title = 'ScriptaMath_Assignment'
+  ): Promise<Blob> {
+    const zip = new JSZip();
+
+    canvases.forEach((canvas, idx) => {
+      const dataUrl = canvas.toDataURL('image/png');
+      const base64Data = dataUrl.replace(/^data:image\/png;base64,/, '');
+      zip.file(`page-${idx + 1}.png`, base64Data, { base64: true });
+    });
+
+    const content = await zip.generateAsync({ type: 'blob' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(content);
+    link.download = `${title}.zip`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    return content;
   }
 }

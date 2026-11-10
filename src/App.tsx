@@ -9,6 +9,8 @@ import { Header } from './components/Header';
 import { StudioControls } from './components/StudioControls';
 import { CanvasPreview } from './components/CanvasPreview';
 import { GlyphStudioModal } from './components/GlyphStudioModal';
+import { StudentizerModal } from './components/StudentizerModal';
+import { HistoryModal } from './components/HistoryModal';
 
 export const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(() => {
@@ -64,6 +66,11 @@ export const App: React.FC = () => {
         studentName: 'Chitesh (25323015)',
         assignmentTitle: initialSample.title,
         dateStr: '03/11/2026',
+        showCoffeeStain: false,
+        marginAnnotation: 'Problem 3 (b) — Due Nov 14',
+        customRoughWork: ['14 * 6 = 84', '84 - 23 = 61', '√61 ≈ 7.81'],
+        showStickyNote: false,
+        stickyNoteText: "Don't forget to submit before 5 PM!",
       },
       zoom: 0.72,
       currentPage: 0,
@@ -72,6 +79,8 @@ export const App: React.FC = () => {
 
   const [currentFont, setCurrentFont] = useState<opentype.Font | null>(null);
   const [isGlyphStudioOpen, setIsGlyphStudioOpen] = useState(false);
+  const [isStudentizerOpen, setIsStudentizerOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [mobileView, setMobileView] = useState<'controls' | 'preview'>('controls');
   const [allographs, setAllographs] = useState<AllographLibrary>(() => {
     try {
@@ -143,7 +152,10 @@ export const App: React.FC = () => {
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#0c0e14] text-slate-100 font-sans">
       {/* Top Application Header */}
-      <Header />
+      <Header
+        onOpenStudentizer={() => setIsStudentizerOpen(true)}
+        onOpenHistory={() => setIsHistoryOpen(true)}
+      />
 
       {/* Main Workspace (Left Studio Controls | Right Live Multi-Page Canvas Preview) */}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
@@ -158,6 +170,7 @@ export const App: React.FC = () => {
             onOpenGlyphStudio={() => setIsGlyphStudioOpen(true)}
             onCustomFontUpload={handleCustomFontUpload}
             onRegenerateSeed={handleRegenerateSeed}
+            onOpenStudentizer={() => setIsStudentizerOpen(true)}
           />
         </div>
 
@@ -206,6 +219,20 @@ export const App: React.FC = () => {
         onClose={() => setIsGlyphStudioOpen(false)}
         allographs={allographs}
         onSaveAllographs={handleSaveAllographs}
+      />
+
+      {/* Zero-API AI Studentizer Bridge Modal */}
+      <StudentizerModal
+        isOpen={isStudentizerOpen}
+        onClose={() => setIsStudentizerOpen(false)}
+        appState={appState}
+        setAppState={setAppState}
+      />
+
+      {/* Local IndexedDB History Vault Modal */}
+      <HistoryModal
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
       />
     </div>
   );

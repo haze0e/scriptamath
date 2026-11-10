@@ -26,6 +26,7 @@ interface StudioControlsProps {
   onOpenGlyphStudio: () => void;
   onCustomFontUpload: (fontBuffer: ArrayBuffer, name: string) => void;
   onRegenerateSeed: () => void;
+  onOpenStudentizer?: () => void;
 }
 
 export const StudioControls: React.FC<StudioControlsProps> = ({
@@ -34,6 +35,7 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
   onOpenGlyphStudio,
   onCustomFontUpload,
   onRegenerateSeed,
+  onOpenStudentizer,
 }) => {
   const [activeTab, setActiveTab] = React.useState<'editor' | 'biomechanics' | 'paper'>('editor');
   const [fontCategory, setFontCategory] = React.useState<FontCategory>('All');
@@ -154,6 +156,32 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
         {/* ==================== TAB 1: AI & MATH INPUT ==================== */}
         {activeTab === 'editor' && (
           <div className="space-y-3.5">
+            {/* AI Studentizer Bridge 1-Click Banner */}
+            {onOpenStudentizer && (
+              <button
+                onClick={onOpenStudentizer}
+                className="w-full flex items-center justify-between p-3 rounded-xl bg-gradient-to-r from-purple-900/30 via-indigo-900/20 to-blue-900/30 hover:from-purple-900/40 hover:to-blue-900/40 border border-purple-500/30 text-left transition-all group shadow-sm"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-300">
+                    <Sparkles className="w-4 h-4 text-purple-300" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <span>Zero-API AI Studentizer Bridge</span>
+                      <span className="text-[9px] bg-purple-500/20 text-purple-300 px-1.5 py-0.2 rounded font-mono">NEW</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      Copy tailored prompts to Gemini/ChatGPT &amp; auto-inject student scratch math
+                    </div>
+                  </div>
+                </div>
+                <div className="text-xs font-semibold text-purple-400 group-hover:translate-x-0.5 transition-transform">
+                  Launch →
+                </div>
+              </button>
+            )}
+
             {/* Handwriting Archetype 1-Click Cards */}
             <div className="bg-[#181d2a] p-3 rounded-xl border border-[#262d42] space-y-2">
               <div className="flex items-center justify-between">
@@ -1101,41 +1129,66 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
             </div>
 
             {/* Rough Calculations Sidebar Toggle Card */}
-            <div className="bg-[#181d2a] p-3.5 rounded-xl border border-[#262d42] flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-slate-200">Right-Margin Rough Work Column</span>
-                  <span
-                    className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-medium ${
-                      appState.paper.roughWorkColumn
-                        ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
-                        : 'bg-slate-800 text-slate-400 border border-slate-700'
-                    }`}
-                  >
-                    {appState.paper.roughWorkColumn ? 'ON' : 'OFF'}
-                  </span>
+            <div className="bg-[#181d2a] p-3.5 rounded-xl border border-[#262d42] space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-200">Right-Margin Rough Work Column</span>
+                    <span
+                      className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-medium ${
+                        appState.paper.roughWorkColumn
+                          ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                          : 'bg-slate-800 text-slate-400 border border-slate-700'
+                      }`}
+                    >
+                      {appState.paper.roughWorkColumn ? 'ON' : 'OFF'}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    Draws a vertical hand divider line with rough scratch math on the right margin.
+                  </div>
                 </div>
-                <div className="text-[10px] text-slate-400 mt-0.5">
-                  Draws a vertical hand divider line with rough scratch math on the right margin.
-                </div>
-              </div>
-              <button
-                onClick={() =>
-                  setAppState((p) => ({
-                    ...p,
-                    paper: { ...p.paper, roughWorkColumn: !p.paper.roughWorkColumn },
-                  }))
-                }
-                className={`w-11 h-6 rounded-full transition-colors relative shrink-0 ${
-                  appState.paper.roughWorkColumn ? 'bg-blue-600' : 'bg-[#1f2536]'
-                }`}
-              >
-                <div
-                  className={`w-4 h-4 rounded-full bg-white transition-transform absolute top-1 ${
-                    appState.paper.roughWorkColumn ? 'left-6' : 'left-1'
+                <button
+                  onClick={() =>
+                    setAppState((p) => ({
+                      ...p,
+                      paper: { ...p.paper, roughWorkColumn: !p.paper.roughWorkColumn },
+                    }))
+                  }
+                  className={`w-11 h-6 rounded-full transition-colors relative shrink-0 ${
+                    appState.paper.roughWorkColumn ? 'bg-blue-600' : 'bg-[#1f2536]'
                   }`}
-                />
-              </button>
+                >
+                  <div
+                    className={`w-4 h-4 rounded-full bg-white transition-transform absolute top-1 ${
+                      appState.paper.roughWorkColumn ? 'left-6' : 'left-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {appState.paper.roughWorkColumn && (
+                <div className="pt-2 border-t border-[#262d42] space-y-1">
+                  <label className="text-[11px] text-slate-400 block">
+                    Scratch Math Lines (one per line)
+                  </label>
+                  <textarea
+                    rows={3}
+                    placeholder="14 * 6 = 84&#10;84 - 23 = 61&#10;√61 ≈ 7.81"
+                    value={(appState.paper.customRoughWork || []).join('\n')}
+                    onChange={(e) =>
+                      setAppState((p) => ({
+                        ...p,
+                        paper: {
+                          ...p.paper,
+                          customRoughWork: e.target.value.split('\n').filter((l) => l.trim().length > 0),
+                        },
+                      }))
+                    }
+                    className="w-full bg-[#11151f] border border-[#262d42] rounded-lg p-2 text-xs font-mono text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Pen Ink Physics */}
@@ -1413,6 +1466,64 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                   </div>
                 </div>
               </label>
+
+              {/* Coffee Mug Ring Stain */}
+              <label className="flex items-start gap-2 bg-[#11151f] p-2.5 rounded-lg border border-[#262d42] cursor-pointer hover:bg-[#181f2f]">
+                <input
+                  type="checkbox"
+                  checked={appState.paper.showCoffeeStain ?? false}
+                  onChange={(e) =>
+                    setAppState((p) => ({
+                      ...p,
+                      paper: { ...p.paper, showCoffeeStain: e.target.checked },
+                    }))
+                  }
+                  className="mt-0.5 rounded text-blue-500 focus:ring-0"
+                />
+                <div>
+                  <div className="text-xs font-medium text-slate-200">Procedural Coffee Mug Rings &amp; Drips</div>
+                  <div className="text-[10px] text-slate-400">
+                    Realistic multiply-blended dark coffee ring and dried liquid droplets on page 1.
+                  </div>
+                </div>
+              </label>
+
+              {/* Sticky Note Overlay */}
+              <div className="bg-[#11151f] p-2.5 rounded-lg border border-[#262d42] space-y-2">
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={appState.paper.showStickyNote ?? false}
+                    onChange={(e) =>
+                      setAppState((p) => ({
+                        ...p,
+                        paper: { ...p.paper, showStickyNote: e.target.checked },
+                      }))
+                    }
+                    className="mt-0.5 rounded text-blue-500 focus:ring-0"
+                  />
+                  <div>
+                    <div className="text-xs font-medium text-slate-200">Pastel Yellow Sticky Note Overlay</div>
+                    <div className="text-[10px] text-slate-400">
+                      Tilted 3D Post-It note with personal reminder text pinned to page 1.
+                    </div>
+                  </div>
+                </label>
+                {appState.paper.showStickyNote && (
+                  <input
+                    type="text"
+                    placeholder="Sticky note text..."
+                    value={appState.paper.stickyNoteText ?? ''}
+                    onChange={(e) =>
+                      setAppState((p) => ({
+                        ...p,
+                        paper: { ...p.paper, stickyNoteText: e.target.value },
+                      }))
+                    }
+                    className="w-full bg-[#0d1017] border border-[#262d42] rounded px-2.5 py-1 text-xs text-yellow-300 placeholder-slate-600 focus:outline-none focus:border-yellow-500"
+                  />
+                )}
+              </div>
             </div>
 
             {/* Physical Scan Realism Sliders */}
@@ -1520,6 +1631,23 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                       }))
                     }
                     className="w-full bg-[#11151f] border border-[#262d42] rounded-lg px-2.5 py-1 text-xs text-slate-200"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-[11px] text-slate-400 block mb-1">
+                    Sideways Gutter Note / Margin Annotation (Page 1)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Problem 3 (b) — Due Nov 14"
+                    value={appState.paper.marginAnnotation ?? ''}
+                    onChange={(e) =>
+                      setAppState((p) => ({
+                        ...p,
+                        paper: { ...p.paper, marginAnnotation: e.target.value },
+                      }))
+                    }
+                    className="w-full bg-[#11151f] border border-[#262d42] rounded-lg px-2.5 py-1 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500"
                   />
                 </div>
               </div>

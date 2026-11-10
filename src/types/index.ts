@@ -70,6 +70,11 @@ export interface PaperScanSettings {
   studentName: string;
   assignmentTitle: string;
   dateStr: string;
+  showCoffeeStain: boolean;
+  marginAnnotation?: string;
+  customRoughWork?: string[]; // Dynamic arithmetic/algebra scratch lines for the rough column
+  showStickyNote?: boolean;
+  stickyNoteText?: string;
 }
 
 export interface AppState {

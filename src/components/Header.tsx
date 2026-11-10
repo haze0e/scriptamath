@@ -1,12 +1,17 @@
 import React, { useState } from 'react';
-import { PenTool, Sparkles, HelpCircle, FileText, CheckCircle2, X } from 'lucide-react';
+import { PenTool, Sparkles, HelpCircle, FileText, CheckCircle2, X, Wand2, Clock, HardDrive } from 'lucide-react';
 
-export const Header: React.FC = () => {
+interface HeaderProps {
+  onOpenStudentizer?: () => void;
+  onOpenHistory?: () => void;
+}
+
+export const Header: React.FC<HeaderProps> = ({ onOpenStudentizer, onOpenHistory }) => {
   const [showInfo, setShowInfo] = useState(false);
 
   return (
     <>
-      <header className="h-14 bg-[#0c0e14] border-b border-[#1f2536] px-6 flex items-center justify-between shrink-0 select-none z-20">
+      <header className="h-14 bg-[#0c0e14] border-b border-[#1f2536] px-4 sm:px-6 flex items-center justify-between shrink-0 select-none z-20">
         {/* Brand */}
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
@@ -27,8 +32,32 @@ export const Header: React.FC = () => {
           </div>
         </div>
 
-        {/* Badges & Info */}
-        <div className="flex items-center gap-3">
+        {/* Action Buttons & Badges */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* AI Studentizer Bridge Button */}
+          {onOpenStudentizer && (
+            <button
+              onClick={onOpenStudentizer}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-600/20 to-blue-600/20 hover:from-purple-600/30 hover:to-blue-600/30 border border-purple-500/40 text-xs font-semibold text-purple-200 hover:text-white shadow-sm transition-all"
+              title="Open Zero-API AI Studentizer Bridge"
+            >
+              <Wand2 className="w-3.5 h-3.5 text-purple-400" />
+              <span>AI Studentizer</span>
+            </button>
+          )}
+
+          {/* Local Vault Button */}
+          {onOpenHistory && (
+            <button
+              onClick={onOpenHistory}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#131722] hover:bg-[#1a2133] border border-[#22293b] text-xs text-slate-300 hover:text-white transition-colors"
+              title="Open IndexedDB History Vault"
+            >
+              <Clock className="w-3.5 h-3.5 text-blue-400" />
+              <span className="hidden sm:inline">Vault</span>
+            </button>
+          )}
+
           <div className="hidden xl:flex items-center gap-2 text-xs text-slate-400">
             <span className="flex items-center gap-1 bg-[#131722] px-2.5 py-1 rounded-full border border-[#22293b]">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
@@ -38,10 +67,6 @@ export const Header: React.FC = () => {
               <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
               Topological Mesh Warping
             </span>
-            <span className="flex items-center gap-1 bg-[#131722] px-2.5 py-1 rounded-full border border-[#22293b]">
-              <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
-              CamScanner Engine
-            </span>
           </div>
 
           <button
@@ -49,7 +74,7 @@ export const Header: React.FC = () => {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#131722] hover:bg-[#1a2133] border border-[#22293b] text-xs text-slate-300 hover:text-white transition-colors"
           >
             <HelpCircle className="w-3.5 h-3.5 text-blue-400" />
-            <span className="hidden sm:inline">How It Works</span>
+            <span className="hidden md:inline">How It Works</span>
           </button>
         </div>
       </header>

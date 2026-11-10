@@ -115,14 +115,41 @@ export function extractBalanced(
 }
 
 /**
+ * Normalizes straight quotes, typewriter double-dashes, and informal punctuation
+ * into natural student handwriting typography outside math blocks.
+ */
+export function normalizeStudentTypography(text: string): string {
+  // Split by math delimiters $...$ and $$...$$ so math syntax is never altered
+  const parts = text.split(/(\$\$[\s\S]*?\$\$|\$[^\$]*?\$)/g);
+
+  return parts
+    .map((part, idx) => {
+      // Odd indices are math blocks — keep intact
+      if (idx % 2 === 1) return part;
+
+      return part
+        .replace(/-- /g, '— ')
+        .replace(/---/g, '—')
+        .replace(/\.\.\./g, '…')
+        .replace(/(\w)'(\w)/g, '$1’$2') // Contractions like don't -> don’t
+        .replace(/"([^"]*)"/g, '“$1”') // Double quotes -> curly quotes
+        .replace(/'([^']*)'/g, '‘$1’'); // Single quotes -> curly quotes
+    })
+    .join('');
+}
+
+/**
  * Parses raw text from ChatGPT, Claude, or Gemini into structured notebook blocks.
  */
 export function parseRawAIOutput(rawText: string): DocumentBlock[] {
   const blocks: DocumentBlock[] = [];
   if (!rawText.trim()) return blocks;
 
+  // Apply smart typographic punctuation to prose without touching LaTeX
+  const typographicallyClean = normalizeStudentTypography(rawText);
+
   // Normalize Windows newlines and LaTeX brackets
-  let normalized = rawText
+  let normalized = typographicallyClean
     .replace(/\r\n/g, '\n')
     .replace(/\\\[([\s\S]*?)\\\]/g, '$$$$$1$$$$') // \[ ... \] to $$ ... $$
     .replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$$'); // \( ... \) to $ ... $
