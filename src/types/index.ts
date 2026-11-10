@@ -91,6 +91,9 @@ export interface PaperScanSettings {
   customRoughWork?: string[]; // Dynamic arithmetic/algebra scratch lines for the rough column
   showStickyNote?: boolean;
   stickyNoteText?: string;
+  highlighterMode?: 'none' | 'yellow' | 'green' | 'cyan' | 'pink'; // Authentic student highlighter overlay
+  highlighterTarget?: 'boxed' | 'headings' | 'both';
+  paperWarmth?: number; // 0.0 (crisp white) to 1.0 (aged warm exam ivory)
 }
 
 export interface AppState {

@@ -31,6 +31,12 @@ export class InkAndScanPipeline {
     ctx.fillStyle = baseColor;
     ctx.fillRect(0, 0, width, height);
 
+    // Warmth / vintage aging tint
+    if (paper.paperWarmth && paper.paperWarmth > 0) {
+      ctx.fillStyle = `rgba(235, 205, 145, ${Math.min(0.42, paper.paperWarmth * 0.32)})`;
+      ctx.fillRect(0, 0, width, height);
+    }
+
     // Subtle paper grain fibers
     if (paper.showPaperTexture) {
       this.drawPaperTextureFibers(ctx, width, height);
@@ -122,6 +128,54 @@ export class InkAndScanPipeline {
       ctx.arc(dx, dy, dropR, 0, Math.PI * 2);
       ctx.fill();
     }
+
+    ctx.restore();
+  }
+
+  /**
+   * Authentic chisel-tip fluorescent/pastel highlighter stroke with realistic
+   * angle bevel, pooling lift marks, and semi-transparent paper absorption.
+   */
+  public drawHighlighterStroke(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    colorMode: 'yellow' | 'green' | 'cyan' | 'pink' = 'yellow'
+  ) {
+    if (w <= 0 || h <= 0) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'multiply';
+
+    let colorRgba = 'rgba(255, 230, 40, 0.55)'; // vibrant fluorescent study yellow
+    if (colorMode === 'green') colorRgba = 'rgba(80, 230, 120, 0.50)';
+    if (colorMode === 'cyan') colorRgba = 'rgba(60, 210, 255, 0.50)';
+    if (colorMode === 'pink') colorRgba = 'rgba(255, 100, 180, 0.48)';
+
+    ctx.fillStyle = colorRgba;
+
+    // Organic chisel marker path with slightly angled start and end edges
+    const slant = 4;
+    const startX = x - 6;
+    const endX = x + w + 8;
+    const topY = y - 2;
+    const bottomY = y + h + 2;
+
+    ctx.beginPath();
+    ctx.moveTo(startX + slant, topY);
+    ctx.lineTo(endX + slant, topY + 0.8);
+    ctx.quadraticCurveTo(endX + slant + 2, (topY + bottomY) / 2, endX, bottomY);
+    ctx.lineTo(startX, bottomY - 0.8);
+    ctx.quadraticCurveTo(startX - 2, (topY + bottomY) / 2, startX + slant, topY);
+    ctx.closePath();
+    ctx.fill();
+
+    // Subtle end lift pooling (darker ink where the chisel tip rested or lifted)
+    ctx.fillStyle = colorRgba.replace(/[\d\.]+\)$/, '0.35)');
+    ctx.beginPath();
+    ctx.ellipse(endX - 2, (topY + bottomY) / 2, 4, Math.max(3, h * 0.35), 0, 0, Math.PI * 2);
+    ctx.fill();
 
     ctx.restore();
   }
@@ -715,6 +769,18 @@ export class InkAndScanPipeline {
           const b = d[i + 2];
           const grain = (this.noise.random() - 0.5) * 3.5;
           const lum = 0.299 * r + 0.587 * g + 0.114 * b + lightWaveY;
+
+          // Preserve authentic fluorescent/pastel study highlighters (CamScanner Magic Color logic)
+          const isHighlighter =
+            (r > 190 && g > 165 && b < 175 && (r - b) > 35) || // yellow / amber
+            (g > 185 && r < 195 && (g - r) > 25) ||            // green
+            (b > 185 && r < 185 && (b - r) > 25) ||            // cyan
+            (r > 195 && b > 140 && g < 175 && (r - g) > 30);   // pink
+
+          if (isHighlighter) {
+            // Retain warm saturated fluorescent dye
+            continue;
+          }
 
           if (lum > 218) {
             if (b > r + 8 && b > g + 4) {

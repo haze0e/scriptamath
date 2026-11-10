@@ -59,6 +59,7 @@ export class PageEngine {
   private currentPen?: AppState['pen'];
   private currentHandwriting?: AppState['handwriting'];
   private currentPaper?: AppState['paper'];
+  private mainPageCtx: CanvasRenderingContext2D | null = null;
   private currentRightMargin: number = RIGHT_MARGIN;
   private currentLineObstacles: Array<{ x1: number; x2: number }> = [];
   private prevLineObstacles: Array<{ x1: number; x2: number }> = [];
@@ -197,6 +198,7 @@ export class PageEngine {
     this.currentPen = pen;
     this.currentHandwriting = handwriting;
     this.currentPaper = paper;
+    this.mainPageCtx = ctx;
 
     // 1. Calibrate procedural math stroke weight directly from font stem metrics
     const stemW = measureFontStemWidth(font, handwriting.fontSize);
@@ -413,6 +415,23 @@ export class PageEngine {
           textRoughCanvas
         );
         const renderedWidth = seqResult.width;
+
+        // Authentic student highlighter marker for headings
+        if (
+          this.mainPageCtx &&
+          paper.highlighterMode &&
+          paper.highlighterMode !== 'none' &&
+          (paper.highlighterTarget === 'headings' || paper.highlighterTarget === 'both')
+        ) {
+          this.inkAndScan.drawHighlighterStroke(
+            this.mainPageCtx,
+            baseMarginX,
+            currentY - headingFontSize * 0.72,
+            renderedWidth + 12,
+            headingFontSize * 1.05,
+            paper.highlighterMode
+          );
+        }
 
         // Hand-drawn authentic student underlines (only for text section titles, never sliced across equations)
         const hasMath = block.tokens.some((t) => t.type === 'fraction' || t.type === 'matrix' || t.type === 'root' || t.type === 'big-op');
@@ -1796,6 +1815,24 @@ export class PageEngine {
       cx += this.renderSingleToken(ctx, font, t, cx, y, fontSize, inkColor, lineProgress, handwriting, roughCanvas);
     }
 
+    if (
+      this.mainPageCtx &&
+      this.currentPaper?.highlighterMode &&
+      this.currentPaper.highlighterMode !== 'none' &&
+      (this.currentPaper.highlighterTarget === 'boxed' ||
+        this.currentPaper.highlighterTarget === 'both' ||
+        !this.currentPaper.highlighterTarget)
+    ) {
+      this.inkAndScan.drawHighlighterStroke(
+        this.mainPageCtx,
+        x,
+        y - fontSize * 0.75,
+        contentWidth + 18,
+        fontSize * 1.15,
+        this.currentPaper.highlighterMode
+      );
+    }
+
     this.mathRenderer.drawBoxedAnswer(
       ctx,
       roughCanvas,
@@ -1860,6 +1897,24 @@ export class PageEngine {
       handwriting,
       roughCanvas
     );
+
+    if (
+      this.mainPageCtx &&
+      this.currentPaper?.highlighterMode &&
+      this.currentPaper.highlighterMode !== 'none' &&
+      (this.currentPaper.highlighterTarget === 'boxed' ||
+        this.currentPaper.highlighterTarget === 'both' ||
+        !this.currentPaper.highlighterTarget)
+    ) {
+      this.inkAndScan.drawHighlighterStroke(
+        this.mainPageCtx,
+        startX + 4,
+        y - fontSize * 0.75,
+        seqResult.width + 16,
+        fontSize * 1.15,
+        this.currentPaper.highlighterMode
+      );
+    }
 
     this.mathRenderer.drawBoxedAnswer(
       ctx,

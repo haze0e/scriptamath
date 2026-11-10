@@ -15,7 +15,8 @@ import { StyleLabModal } from './components/StyleLabModal';
 
 export const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(() => {
-    const initialSample = SAMPLE_ASSIGNMENTS[0];
+    const sampleParam = new URLSearchParams(window.location.search).get('sample');
+    const initialSample = SAMPLE_ASSIGNMENTS.find((s) => s.id === sampleParam) || SAMPLE_ASSIGNMENTS[0];
     return {
       rawInput: initialSample.content,
       handwriting: {
@@ -72,6 +73,9 @@ export const App: React.FC = () => {
         customRoughWork: ['14 * 6 = 84', '84 - 23 = 61', '√61 ≈ 7.81'],
         showStickyNote: false,
         stickyNoteText: "Don't forget to submit before 5 PM!",
+        highlighterMode: (new URLSearchParams(window.location.search).get('highlight') as any) || 'none',
+        highlighterTarget: (new URLSearchParams(window.location.search).get('hlTarget') as any) || 'both',
+        paperWarmth: parseFloat(new URLSearchParams(window.location.search).get('warmth') || '0.15'),
       },
       zoom: 0.72,
       currentPage: 0,

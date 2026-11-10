@@ -682,13 +682,13 @@ $$\\implies 2x + y = 0 \\implies \\vec{v}_2 = \\begin{bmatrix} 1 \\\\ -2 \\end{b
 
 Thus the modal matrix $P$ and diagonal matrix $D$ are:
 $$\\boxed{P = \\begin{bmatrix} 1 & 1 \\\\ 1 & -2 \\end{bmatrix}, \\quad D = \\begin{bmatrix} 5 & 0 \\\\ 0 & 2 \\end{bmatrix}}$$
-\`
+`
   },
   {
     id: 'bisection-root',
     title: 'Numerical Methods: Bisection Root Finding (Indian College Assignment)',
     description: 'Interval continuity check, sign changes, iterative bisection table, and boxed root.',
-    content: \`# Numerical Analysis & Computation
+    content: `# Numerical Analysis & Computation
 ## Department of Mathematics — Assignment 2
 
 (1) Find the positive real root of the polynomial equation:

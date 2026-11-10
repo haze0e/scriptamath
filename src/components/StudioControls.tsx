@@ -19,6 +19,9 @@ import {
   Plus,
   Save,
   Gauge,
+  Highlighter,
+  Download,
+  Share2,
 } from 'lucide-react';
 import {
   AppState,
@@ -38,6 +41,8 @@ import {
   deleteCustomPersona,
   applyVarianceToHandwriting,
   inferVarianceFromSettings,
+  downloadPersonasFile,
+  importCustomPersonasFromJson,
 } from '../constants/personas';
 
 interface StudioControlsProps {
@@ -72,6 +77,33 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
   const [isFontPickerOpen, setIsFontPickerOpen] = useState(false);
   const [showMathPalette, setShowMathPalette] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const personaFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [personaMessage, setPersonaMessage] = useState<string | null>(null);
+
+  const handleExportPersonas = () => {
+    downloadPersonasFile();
+    setPersonaMessage('Exported styles downloaded!');
+    setTimeout(() => setPersonaMessage(null), 3000);
+  };
+
+  const handleImportPersonaFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      const res = importCustomPersonasFromJson(content);
+      if (res.success) {
+        setCustomPersonas(loadCustomPersonas());
+        setPersonaMessage(`Imported ${res.count} handwriting styles!`);
+      } else {
+        setPersonaMessage(`Import failed: ${res.error}`);
+      }
+      setTimeout(() => setPersonaMessage(null), 4000);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
 
   // Sync custom personas if storage changes
   useEffect(() => {
@@ -510,8 +542,37 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                       <Save className="w-3 h-3 text-blue-400" />
                       <span>Save</span>
                     </button>
+                    <button
+                      onClick={handleExportPersonas}
+                      className="p-1 rounded-lg bg-[#11151f] hover:bg-[#1f2638] text-slate-400 hover:text-white border border-[#262d42] text-[11px] transition-colors"
+                      title="Export saved styles as JSON file"
+                    >
+                      <Download className="w-3.5 h-3.5 text-slate-300" />
+                    </button>
+                    <button
+                      onClick={() => personaFileInputRef.current?.click()}
+                      className="p-1 rounded-lg bg-[#11151f] hover:bg-[#1f2638] text-slate-400 hover:text-white border border-[#262d42] text-[11px] transition-colors"
+                      title="Import custom styles from JSON file"
+                    >
+                      <Upload className="w-3.5 h-3.5 text-slate-300" />
+                    </button>
+                    <input
+                      ref={personaFileInputRef}
+                      type="file"
+                      accept=".json"
+                      onChange={handleImportPersonaFile}
+                      className="hidden"
+                    />
                   </div>
                 </div>
+
+                {/* Persona Notification Toast */}
+                {personaMessage && (
+                  <div className="text-[11px] bg-blue-950/60 border border-blue-500/40 text-blue-200 px-2.5 py-1 rounded-md animate-fade-in flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3 h-3 text-blue-400 shrink-0" />
+                    <span>{personaMessage}</span>
+                  </div>
+                )}
 
                 {/* Inline Save Preset Form */}
                 {isSavingPersona && (
@@ -1439,6 +1500,113 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                   <div className="text-xs font-semibold">📘 Ruled + CamScanner</div>
                   <div className="text-[10px] text-slate-400 mt-0.5">Indian notebook blue lines + red margin</div>
                 </button>
+              </div>
+            </div>
+
+            {/* Study Highlighter Marker Card */}
+            <div className="bg-[#181d2a] p-3.5 rounded-xl border border-[#262d42] space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Highlighter className="w-4 h-4 text-amber-400" />
+                  <div>
+                    <span className="text-xs font-semibold text-slate-200">Study Highlighter Marker</span>
+                    <div className="text-[10px] text-slate-400">Authentic chisel-tip translucent marker streak</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  {(['none', 'yellow', 'green', 'cyan', 'pink'] as const).map((m) => {
+                    const isSelected = (appState.paper.highlighterMode ?? 'none') === m;
+                    const bgClass =
+                      m === 'none'
+                        ? 'bg-[#11151f] text-slate-400 border-[#262d42]'
+                        : m === 'yellow'
+                        ? 'bg-yellow-400/90 text-yellow-950 border-yellow-300'
+                        : m === 'green'
+                        ? 'bg-emerald-400/90 text-emerald-950 border-emerald-300'
+                        : m === 'cyan'
+                        ? 'bg-sky-400/90 text-sky-950 border-sky-300'
+                        : 'bg-pink-400/90 text-pink-950 border-pink-300';
+
+                    return (
+                      <button
+                        key={m}
+                        onClick={() =>
+                          setAppState((p) => ({
+                            ...p,
+                            paper: { ...p.paper, highlighterMode: m },
+                          }))
+                        }
+                        className={`px-2 py-1 rounded-md text-[11px] font-semibold border transition-all ${
+                          isSelected ? 'ring-2 ring-blue-500 scale-105 shadow-sm' : 'opacity-70 hover:opacity-100'
+                        } ${bgClass}`}
+                      >
+                        {m === 'none' ? 'Off' : m.charAt(0).toUpperCase() + m.slice(1)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {appState.paper.highlighterMode && appState.paper.highlighterMode !== 'none' && (
+                <div className="pt-2 border-t border-[#262d42] flex items-center justify-between text-xs animate-fade-in">
+                  <span className="text-slate-400 text-[11px]">Marker Placement:</span>
+                  <div className="flex gap-1.5">
+                    {[
+                      { id: 'boxed', label: 'Boxed Answers' },
+                      { id: 'headings', label: 'Headings' },
+                      { id: 'both', label: 'Both' },
+                    ].map((target) => (
+                      <button
+                        key={target.id}
+                        onClick={() =>
+                          setAppState((p) => ({
+                            ...p,
+                            paper: { ...p.paper, highlighterTarget: target.id as any },
+                          }))
+                        }
+                        className={`px-2.5 py-0.5 rounded text-[11px] border transition-colors ${
+                          (appState.paper.highlighterTarget ?? 'both') === target.id
+                            ? 'bg-blue-600 border-blue-500 text-white font-medium'
+                            : 'bg-[#11151f] border-[#262d42] text-slate-300 hover:text-white'
+                        }`}
+                      >
+                        {target.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Paper Warmth & Aging Slider */}
+            <div className="bg-[#181d2a] p-3.5 rounded-xl border border-[#262d42] space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-semibold text-slate-200">Paper Warmth &amp; Vintage Tone</span>
+                  <div className="text-[10px] text-slate-400">Controls natural cellulose yellowing &amp; exam hall paper tint</div>
+                </div>
+                <span className="text-[11px] font-mono text-blue-400 font-semibold">
+                  {Math.round((appState.paper.paperWarmth ?? 0.15) * 100)}%
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={appState.paper.paperWarmth ?? 0.15}
+                onChange={(e) =>
+                  setAppState((p) => ({
+                    ...p,
+                    paper: { ...p.paper, paperWarmth: parseFloat(e.target.value) },
+                  }))
+                }
+                className="w-full accent-blue-500 h-1.5 bg-[#11151f] rounded-lg cursor-pointer"
+              />
+              <div className="flex justify-between text-[10px] text-slate-400">
+                <span>Crisp White (0%)</span>
+                <span>Warm Ivory (30%)</span>
+                <span>Aged Exam Paper (100%)</span>
               </div>
             </div>
 

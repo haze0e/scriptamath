@@ -21,6 +21,11 @@ import {
   Pause,
   Square,
   FastForward,
+  Volume2,
+  VolumeX,
+  HelpCircle,
+  X,
+  Keyboard,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import opentype from 'opentype.js';
@@ -29,6 +34,7 @@ import { parseRawAIOutput } from '../engine/formatter';
 import { PageEngine, PageLayoutData, PAGE_WIDTH, PAGE_HEIGHT } from '../engine/pageEngine';
 import { ExportModal } from './ExportModal';
 import { VariationStudioModal } from './VariationStudioModal';
+import { writingAudio } from '../engine/audioSynthesizer';
 
 interface CanvasPreviewProps {
   appState: AppState;
@@ -67,6 +73,10 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
   });
   const [replayPaused, setReplayPaused] = useState<boolean>(false);
   const [replaySpeed, setReplaySpeed] = useState<number>(1);
+  const [isAudioMuted, setIsAudioMuted] = useState<boolean>(false);
+  const [showKeyboardHelp, setShowKeyboardHelp] = useState<boolean>(() => {
+    return new URLSearchParams(window.location.search).get('help') === '1';
+  });
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -115,6 +125,21 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
       } else if (e.key === '0') {
         e.preventDefault();
         setAppState((p) => ({ ...p, zoom: 0.72 }));
+      } else if (e.code === 'Space') {
+        e.preventDefault();
+        if (isReplaying) {
+          setReplayPaused((prev) => !prev);
+        } else {
+          setReplayBlockCount(0);
+          setReplayPaused(false);
+          setIsReplaying(true);
+        }
+      } else if (e.key.toLowerCase() === 'r' && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        onRegenerateSeed();
+      } else if (e.key === '?') {
+        e.preventDefault();
+        setShowKeyboardHelp((prev) => !prev);
       }
     };
 
@@ -162,6 +187,9 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
     const stepDelay = Math.max(90, Math.floor(450 / replaySpeed));
     const timer = setTimeout(() => {
       if (replayBlockCount < totalBlocks) {
+        if (!isAudioMuted) {
+          writingAudio.playStrokeSound(appState.pen.penStyle, 1.0);
+        }
         setReplayBlockCount((prev) => prev + 1);
       } else {
         // Complete replay
@@ -175,7 +203,18 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
     }, stepDelay);
 
     return () => clearTimeout(timer);
-  }, [isReplaying, replayBlockCount, replayPaused, replaySpeed, currentFont, currentPageIdx, pagesData, appState, pageEngine]);
+  }, [
+    isReplaying,
+    replayBlockCount,
+    replayPaused,
+    replaySpeed,
+    isAudioMuted,
+    currentFont,
+    currentPageIdx,
+    pagesData,
+    appState,
+    pageEngine,
+  ]);
 
   // Automated batch rendering bridge for inspection & verification
   useEffect(() => {
@@ -500,6 +539,14 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
             <FileDown className="w-3.5 h-3.5" />
             <span>Export PDF</span>
           </button>
+
+          <button
+            onClick={() => setShowKeyboardHelp(true)}
+            className="p-1.5 rounded-lg border border-[#262d42] bg-[#131722] hover:bg-[#1c2336] text-slate-400 hover:text-white transition-colors"
+            title="Keyboard Shortcuts (?)"
+          >
+            <HelpCircle className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
 
@@ -541,6 +588,19 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
               title="Toggle animation speed"
             >
               {replaySpeed}x
+            </button>
+
+            {/* Audio Scratch Sound Toggle */}
+            <button
+              onClick={() => setIsAudioMuted(!isAudioMuted)}
+              className={`p-1 rounded-md transition-colors ${
+                !isAudioMuted
+                  ? 'text-emerald-400 hover:text-emerald-300 hover:bg-[#1a2133]'
+                  : 'text-slate-500 hover:text-slate-300 hover:bg-[#1a2133]'
+              }`}
+              title={!isAudioMuted ? 'Mute writing audio friction' : 'Unmute writing audio friction'}
+            >
+              {!isAudioMuted ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
             </button>
 
             <button
@@ -618,6 +678,56 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
         currentPageIdx={currentPageIdx}
         onAdoptVariation={handleAdoptVariation}
       />
+
+      {/* Keyboard Shortcuts Guide Modal */}
+      {showKeyboardHelp && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-[#121622] border border-[#262d42] rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-[#262d42] pb-3">
+              <div className="flex items-center gap-2">
+                <Keyboard className="w-5 h-5 text-blue-400" />
+                <h3 className="text-sm font-semibold text-white">Keyboard Shortcuts</h3>
+              </div>
+              <button
+                onClick={() => setShowKeyboardHelp(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-[#1a2133] transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <div className="flex items-center justify-between py-1.5 border-b border-[#1c2233]">
+                <span className="text-slate-300">Previous / Next Page</span>
+                <span className="font-mono bg-[#1c2233] px-2 py-0.5 rounded text-blue-300 border border-[#262d42]">← / →</span>
+              </div>
+              <div className="flex items-center justify-between py-1.5 border-b border-[#1c2233]">
+                <span className="text-slate-300">Watch It Written (Play/Pause)</span>
+                <span className="font-mono bg-[#1c2233] px-2 py-0.5 rounded text-blue-300 border border-[#262d42]">Space</span>
+              </div>
+              <div className="flex items-center justify-between py-1.5 border-b border-[#1c2233]">
+                <span className="text-slate-300">Re-Randomize Handwriting Noise</span>
+                <span className="font-mono bg-[#1c2233] px-2 py-0.5 rounded text-blue-300 border border-[#262d42]">R</span>
+              </div>
+              <div className="flex items-center justify-between py-1.5 border-b border-[#1c2233]">
+                <span className="text-slate-300">Zoom In / Out / Reset</span>
+                <span className="font-mono bg-[#1c2233] px-2 py-0.5 rounded text-blue-300 border border-[#262d42]">+ / - / 0</span>
+              </div>
+              <div className="flex items-center justify-between py-1.5">
+                <span className="text-slate-300">Toggle Keyboard Shortcuts</span>
+                <span className="font-mono bg-[#1c2233] px-2 py-0.5 rounded text-blue-300 border border-[#262d42]">?</span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowKeyboardHelp(false)}
+              className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold transition-colors"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 };

@@ -323,6 +323,103 @@ export function deleteCustomPersona(id: string): void {
   }
 }
 
+/**
+ * Exports all saved custom personas to a downloadable JSON string
+ */
+export function exportCustomPersonasToJson(): string {
+  const personas = loadCustomPersonas();
+  return JSON.stringify(
+    {
+      version: 1,
+      source: 'ScriptaMath Studio',
+      exportedAt: new Date().toISOString(),
+      personas,
+    },
+    null,
+    2
+  );
+}
+
+/**
+ * Triggers a direct browser file download of exported persona profiles
+ */
+export function downloadPersonasFile(): void {
+  const jsonStr = exportCustomPersonasToJson();
+  const blob = new Blob([jsonStr], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `scriptamath-handwriting-styles-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Imports personas from a JSON string into localStorage
+ */
+export function importCustomPersonasFromJson(jsonStr: string): { success: boolean; count: number; error?: string } {
+  try {
+    const parsed = JSON.parse(jsonStr);
+    const candidates: CustomPersonaProfile[] = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray(parsed.personas)
+      ? parsed.personas
+      : [];
+
+    if (!candidates.length) {
+      return { success: false, count: 0, error: 'No valid persona profiles found in file.' };
+    }
+
+    const validProfiles: CustomPersonaProfile[] = [];
+    for (const c of candidates) {
+      if (c && typeof c.id === 'string' && typeof c.name === 'string' && c.handwriting) {
+        validProfiles.push({
+          id: c.id,
+          name: c.name,
+          subtitle: c.subtitle || 'Imported Style',
+          description: c.description || 'Imported from custom persona package',
+          badge: c.badge || 'Imported',
+          createdAt: typeof c.createdAt === 'number' ? c.createdAt : Date.now(),
+          handwriting: c.handwriting,
+          pen: c.pen || {},
+          paper: c.paper || {},
+        });
+      }
+    }
+
+    if (!validProfiles.length) {
+      return { success: false, count: 0, error: 'File contains malformed persona profiles.' };
+    }
+
+    const existing = loadCustomPersonas();
+    const existingIds = new Set(existing.map((p) => p.id));
+    let addedCount = 0;
+
+    for (const vp of validProfiles) {
+      if (!existingIds.has(vp.id)) {
+        existing.unshift(vp);
+        existingIds.add(vp.id);
+        addedCount++;
+      } else {
+        // Update existing with imported values
+        const idx = existing.findIndex((p) => p.id === vp.id);
+        if (idx !== -1) {
+          existing[idx] = vp;
+          addedCount++;
+        }
+      }
+    }
+
+    const trimmed = existing.slice(0, 20); // allow up to 20 imported personas
+    localStorage.setItem(CUSTOM_PERSONAS_STORAGE_KEY, JSON.stringify(trimmed));
+    return { success: true, count: addedCount };
+  } catch (err) {
+    return { success: false, count: 0, error: (err as Error).message || 'Invalid JSON format' };
+  }
+}
+
 // ── Master Human Variance Calculation ─────────────────────────────────────────
 export function applyVarianceToHandwriting(
   current: HandwritingStyleSettings,
