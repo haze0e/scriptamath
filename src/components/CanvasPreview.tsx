@@ -13,13 +13,22 @@ import {
   CheckCircle2,
   Loader2,
   Archive,
+  Dice5,
+  Copy,
+  Check,
+  Code,
+  Play,
+  Pause,
+  Square,
+  FastForward,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import opentype from 'opentype.js';
-import { AppState } from '../types';
+import { AppState, HandwritingStyleSettings, PenSettings } from '../types';
 import { parseRawAIOutput } from '../engine/formatter';
 import { PageEngine, PageLayoutData, PAGE_WIDTH, PAGE_HEIGHT } from '../engine/pageEngine';
 import { ExportModal } from './ExportModal';
+import { VariationStudioModal } from './VariationStudioModal';
 
 interface CanvasPreviewProps {
   appState: AppState;
@@ -45,6 +54,19 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [isRendering, setIsRendering] = useState<boolean>(false);
   const [exportSuccess, setExportSuccess] = useState<boolean>(false);
+  const [isVariationStudioOpen, setIsVariationStudioOpen] = useState<boolean>(() => {
+    return new URLSearchParams(window.location.search).get('modal') === 'variations';
+  });
+  const [copySuccess, setCopySuccess] = useState<boolean>(false);
+  const [isReplaying, setIsReplaying] = useState<boolean>(() => {
+    return new URLSearchParams(window.location.search).get('replay') === '1';
+  });
+  const [replayBlockCount, setReplayBlockCount] = useState<number>(() => {
+    const b = new URLSearchParams(window.location.search).get('replayBlock');
+    return b ? parseInt(b, 10) : 0;
+  });
+  const [replayPaused, setReplayPaused] = useState<boolean>(false);
+  const [replaySpeed, setReplaySpeed] = useState<number>(1);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -100,9 +122,10 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [pagesData.length, onRegenerateSeed, setAppState]);
 
-  // Render current page onto canvas
+  // Render current page onto canvas (when not in replay mode)
   useEffect(() => {
     if (!currentFont || pagesData.length === 0) return;
+    if (isReplaying) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -119,7 +142,40 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
     appState.pen,
     appState.paper,
     appState.handwriting.randomSeed,
+    isReplaying,
   ]);
+
+  // Live Replay handwriting animation loop
+  useEffect(() => {
+    if (!isReplaying || !currentFont || pagesData.length === 0) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const pageData = pagesData[currentPageIdx] || pagesData[0];
+    const totalBlocks = pageData.blocks.length;
+
+    // Render up to replayBlockCount
+    pageEngine.renderPage(canvas, pageData, appState, currentFont, replayBlockCount);
+
+    if (replayPaused) return;
+
+    const stepDelay = Math.max(90, Math.floor(450 / replaySpeed));
+    const timer = setTimeout(() => {
+      if (replayBlockCount < totalBlocks) {
+        setReplayBlockCount((prev) => prev + 1);
+      } else {
+        // Complete replay
+        setIsReplaying(false);
+        confetti({
+          particleCount: 60,
+          spread: 60,
+          origin: { y: 0.7 },
+        });
+      }
+    }, stepDelay);
+
+    return () => clearTimeout(timer);
+  }, [isReplaying, replayBlockCount, replayPaused, replaySpeed, currentFont, currentPageIdx, pagesData, appState, pageEngine]);
 
   // Automated batch rendering bridge for inspection & verification
   useEffect(() => {
@@ -207,6 +263,63 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
     a.click();
   };
 
+  const handleCopyToClipboard = async () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    try {
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blob }),
+        ]);
+        setCopySuccess(true);
+        setTimeout(() => setCopySuccess(false), 2200);
+      }, 'image/png');
+    } catch (err) {
+      console.warn('Clipboard write failed:', err);
+    }
+  };
+
+  const handleExportCurrentSVG = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const dataUrl = canvas.toDataURL('image/png');
+    const svgContent = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}" width="${PAGE_WIDTH}px" height="${PAGE_HEIGHT}px">
+  <title>ScriptaMath - Page ${currentPageIdx + 1}</title>
+  <image width="${PAGE_WIDTH}" height="${PAGE_HEIGHT}" xlink:href="${dataUrl}"/>
+</svg>`;
+
+    const blob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ScriptaMath_Page_${currentPageIdx + 1}.svg`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleAdoptVariation = (overrides: {
+    handwriting: Partial<HandwritingStyleSettings>;
+    pen: Partial<PenSettings>;
+    randomSeed: number;
+  }) => {
+    setAppState((prev) => ({
+      ...prev,
+      handwriting: {
+        ...prev.handwriting,
+        ...overrides.handwriting,
+        randomSeed: overrides.randomSeed,
+      },
+      pen: {
+        ...prev.pen,
+        ...overrides.pen,
+      },
+    }));
+  };
+
   return (
     <main className="flex-1 flex flex-col h-full bg-[#090b10] overflow-hidden relative">
       {/* Top Controls Toolbar */}
@@ -249,8 +362,8 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
             </span>
           </div>
 
-          {pagesData.length > 1 && (
-            <div className="hidden lg:flex items-center gap-1 bg-[#131722] border border-[#22293b] rounded-lg p-0.5">
+          {pagesData.length > 1 && pagesData.length <= 5 && (
+            <div className="hidden xl:flex items-center gap-1 bg-[#131722] border border-[#22293b] rounded-lg p-0.5">
               {pagesData.map((_, idx) => (
                 <button
                   key={idx}
@@ -297,7 +410,39 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
         </div>
 
         {/* Right: Export & Seed Buttons */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
+          {/* Compare Variations Modal Trigger */}
+          <button
+            onClick={() => setIsVariationStudioOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-purple-500/40 bg-gradient-to-r from-purple-950/50 via-indigo-950/40 to-blue-950/50 hover:from-purple-900/60 hover:to-blue-900/60 text-purple-200 hover:text-white text-xs font-semibold shadow-sm transition-all"
+            title="Side-by-side Top-K handwriting diversity comparison grid"
+          >
+            <Dice5 className="w-3.5 h-3.5 text-purple-400" />
+            <span className="hidden sm:inline">Compare</span> Styles
+          </button>
+
+          {/* Live Handwriting Replay Button */}
+          <button
+            onClick={() => {
+              if (isReplaying) {
+                setIsReplaying(false);
+              } else {
+                setReplayBlockCount(0);
+                setReplayPaused(false);
+                setIsReplaying(true);
+              }
+            }}
+            className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all ${
+              isReplaying
+                ? 'border-emerald-500 bg-emerald-950/60 text-emerald-300'
+                : 'border-[#262d42] bg-[#131722] hover:bg-[#1c2336] text-slate-300 hover:text-white'
+            }`}
+            title="Watch the derivation physically handwritten line-by-line onto the paper"
+          >
+            <Play className="w-3.5 h-3.5 text-emerald-400" />
+            <span>{isReplaying ? 'Replaying...' : 'Replay'}</span>
+          </button>
+
           <button
             onClick={onRegenerateSeed}
             className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#262d42] bg-[#131722] hover:bg-[#1c2336] text-slate-300 hover:text-white text-xs transition-colors"
@@ -306,13 +451,36 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
             <span>Re-Randomize</span>
           </button>
 
+          {/* Quick 1-Click Clipboard Copy */}
+          <button
+            onClick={handleCopyToClipboard}
+            className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs transition-all ${
+              copySuccess
+                ? 'border-emerald-500 bg-emerald-950/60 text-emerald-300 font-semibold'
+                : 'border-[#262d42] bg-[#131722] hover:bg-[#1c2336] text-slate-300 hover:text-white'
+            }`}
+            title="Copy Page Image directly to Clipboard for instant pasting"
+          >
+            {copySuccess ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-blue-400" />}
+            <span>{copySuccess ? 'Copied!' : 'Copy'}</span>
+          </button>
+
           <button
             onClick={handleExportCurrentPNG}
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#262d42] bg-[#131722] hover:bg-[#1c2336] text-slate-300 hover:text-white text-xs transition-colors"
+            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#262d42] bg-[#131722] hover:bg-[#1c2336] text-slate-300 hover:text-white text-xs transition-colors"
             title="Download Current Page as PNG"
           >
             <Download className="w-3.5 h-3.5" />
             <span>PNG</span>
+          </button>
+
+          <button
+            onClick={handleExportCurrentSVG}
+            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#262d42] bg-[#131722] hover:bg-[#1c2336] text-slate-300 hover:text-white text-xs transition-colors"
+            title="Download Current Page as Vector SVG"
+          >
+            <Code className="w-3.5 h-3.5 text-blue-400" />
+            <span>SVG</span>
           </button>
 
           <button
@@ -345,6 +513,43 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
           <div className="absolute top-12 right-12 z-20 bg-slate-900/80 border border-slate-700/60 backdrop-blur-md px-3 py-1.5 rounded-full flex items-center gap-2 text-xs text-slate-300 shadow-lg">
             <Loader2 className="w-3 h-3 text-blue-400 animate-spin" />
             <span>Rendering Bezier mesh...</span>
+          </div>
+        )}
+
+        {/* Floating Replay Controller Bar */}
+        {isReplaying && (
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-30 bg-[#0e121c]/95 border border-[#2a344d] shadow-2xl backdrop-blur-md rounded-full px-4 py-2 flex items-center gap-3 animate-fade-in text-xs">
+            <div className="flex items-center gap-2 pr-2 border-r border-[#262d42]">
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="font-semibold text-slate-200">Writing Derivation...</span>
+              <span className="font-mono text-blue-400 text-[11px]">
+                {replayBlockCount} / {pagesData[currentPageIdx]?.blocks.length || 0}
+              </span>
+            </div>
+
+            <button
+              onClick={() => setReplayPaused(!replayPaused)}
+              className="p-1 rounded-md text-slate-300 hover:text-white hover:bg-[#1a2133] transition-colors"
+              title={replayPaused ? 'Resume writing' : 'Pause'}
+            >
+              {replayPaused ? <Play className="w-4 h-4 text-emerald-400" /> : <Pause className="w-4 h-4 text-amber-400" />}
+            </button>
+
+            <button
+              onClick={() => setReplaySpeed((s) => (s === 1 ? 2 : s === 4 ? 1 : 4))}
+              className="px-2 py-0.5 rounded bg-[#161c2b] border border-[#262d42] hover:bg-[#1f283d] text-[11px] font-mono font-bold text-blue-300"
+              title="Toggle animation speed"
+            >
+              {replaySpeed}x
+            </button>
+
+            <button
+              onClick={() => setIsReplaying(false)}
+              className="p-1 rounded-md text-slate-400 hover:text-red-400 hover:bg-[#1a2133] transition-colors"
+              title="Stop replay and show full page"
+            >
+              <Square className="w-3.5 h-3.5" />
+            </button>
           </div>
         )}
 
@@ -404,6 +609,14 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
         appState={appState}
         currentFont={currentFont}
         pageEngine={pageEngine}
+      />
+      {/* Multi-Sample Variation Studio Modal */}
+      <VariationStudioModal
+        isOpen={isVariationStudioOpen}
+        onClose={() => setIsVariationStudioOpen(false)}
+        appState={appState}
+        currentPageIdx={currentPageIdx}
+        onAdoptVariation={handleAdoptVariation}
       />
     </main>
   );

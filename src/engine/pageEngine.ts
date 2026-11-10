@@ -181,7 +181,8 @@ export class PageEngine {
     canvas: HTMLCanvasElement,
     pageData: PageLayoutData,
     appState: AppState,
-    font: opentype.Font
+    font: opentype.Font,
+    maxBlocks?: number
   ) {
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
@@ -336,7 +337,9 @@ export class PageEngine {
 
     const totalLinesEstimate = Math.floor((PAGE_HEIGHT - TOP_MARGIN - BOTTOM_MARGIN) / BASE_LINE_HEIGHT);
 
-    for (let bIdx = 0; bIdx < pageData.blocks.length; bIdx++) {
+    const limit = maxBlocks !== undefined ? Math.max(0, Math.min(maxBlocks, pageData.blocks.length)) : pageData.blocks.length;
+
+    for (let bIdx = 0; bIdx < limit; bIdx++) {
       const block = pageData.blocks[bIdx];
       const nextBlock = bIdx < pageData.blocks.length - 1 ? pageData.blocks[bIdx + 1] : null;
       const isFinalStep =
