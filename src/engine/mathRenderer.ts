@@ -792,6 +792,14 @@ export class MathRenderer {
    * Procedural Lowercase Greek Pi (π):
    * Top undulating crossbar with dual downward legs and right foot curl.
    */
+  /**
+   * Procedural Lowercase Greek Pi (π):
+   * Features dynamic biomechanical variation and genuine human allographs:
+   * - Allograph 0: Fluid cursive with wavy crossbar and sweeping exit foot curl.
+   * - Allograph 1: Rapid speed print with tilted crossbar and decisive slanted legs.
+   * - Allograph 2: Continuous connected cursive loop where the left leg flows directly into the crossbar.
+   * Modulates width, height, leg spacing, tilt angle, and baseline landing depths for zero cloned appearance.
+   */
   public drawPi(
     ctx: CanvasRenderingContext2D,
     x: number,
@@ -800,10 +808,46 @@ export class MathRenderer {
     inkColor: string
   ): number {
     const scale = fontSize / 28;
-    const w = 15.5 * scale;
-    // Lowercase pi x-height: matches lowercase letters (x, n, m)
-    const barY = y - fontSize * 0.50;
+
+    // Biometric seeds for this specific glyph instance
+    const r1 = this.noise.random();
+    const r2 = this.noise.random();
+    const r3 = this.noise.random();
+    const r4 = this.noise.random();
+    const r5 = this.noise.random();
+
+    // Natural width variation (13.5 to 17.8 * scale)
+    const w = (13.5 + r1 * 4.3) * scale;
+
+    // Natural height variation (0.46 to 0.53 * fontSize)
+    const heightRatio = 0.46 + r2 * 0.07;
+    const barY = y - fontSize * heightRatio;
     const bottomY = y;
+
+    // Crossbar tilt angle (-2.5° to +3.3°)
+    const tiltAngle = (-2.5 + r3 * 5.8) * (Math.PI / 180);
+    const barTiltDy = Math.tan(tiltAngle) * w;
+
+    // Left and right overhangs
+    const leftOverhang = (0.6 + r4 * 2.2) * scale;
+    const rightOverhang = (0.8 + r5 * 2.5) * scale;
+    const barStartX = x - leftOverhang;
+    const barEndX = x + w + rightOverhang;
+    const barEndY = barY + barTiltDy;
+
+    // Leg position variation
+    const leftLegXRatio = 0.23 + (r2 - 0.5) * 0.08;
+    const rightLegXRatio = 0.67 + (r3 - 0.5) * 0.08;
+    const leftLegTopX = x + w * leftLegXRatio;
+    const rightLegTopX = x + w * rightLegXRatio;
+
+    // Independent baseline landing variations (students rarely land both legs on exact same pixel)
+    const leftBottomY = bottomY + (r4 - 0.4) * 1.8 * scale;
+    const rightBottomY = bottomY + (r5 - 0.5) * 1.8 * scale;
+
+    // Allograph selection:
+    // 0: Classic Cursive (~50%), 1: Rapid Speed Print (~30%), 2: Continuous Loop Cursive (~20%)
+    const styleRoll = (r1 * 7 + r2 * 13) % 1.0;
 
     ctx.save();
     ctx.strokeStyle = inkColor;
@@ -811,49 +855,125 @@ export class MathRenderer {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    // 1. Horizontal top bar with organic wavy entry and natural overshoot
-    const barStartX = x - 0.8 * scale;
-    const barEndX = x + w + 1.8 * scale;
-    const waveLift = (1.2 + (this.noise.random() - 0.5) * 0.5) * scale;
-    ctx.beginPath();
-    ctx.moveTo(barStartX, barY + waveLift);
-    ctx.bezierCurveTo(
-      x + 2.5 * scale,
-      barY - waveLift,
-      x + w * 0.55,
-      barY + 0.3 * scale,
-      barEndX,
-      barY + (this.noise.random() - 0.5) * 0.8 * scale
-    );
-    ctx.stroke();
+    if (styleRoll < 0.22) {
+      // --- Allograph 2: Continuous Connected Cursive Loop π ---
+      // Student enters from bottom/left, loops up the left leg, loops into crossbar, then drops right leg
+      const entryX = leftLegTopX - (2.5 + r3 * 2.0) * scale;
+      const entryY = bottomY - fontSize * 0.15;
 
-    // 2. Left downward leg (slight inward curve with gentle taper towards baseline)
-    const leftLegTopX = x + w * 0.28;
-    ctx.beginPath();
-    ctx.moveTo(leftLegTopX, barY + 1.0 * scale);
-    ctx.quadraticCurveTo(
-      x + w * 0.23,
-      y - fontSize * 0.24,
-      x + w * 0.20,
-      bottomY
-    );
-    ctx.stroke();
+      ctx.beginPath();
+      // Upward stroke of left stem into loop
+      ctx.moveTo(entryX, entryY);
+      ctx.lineTo(leftLegTopX, barY + 1.5 * scale);
+      // Small loop at top left apex
+      ctx.bezierCurveTo(
+        leftLegTopX - 1.5 * scale,
+        barY - 1.8 * scale,
+        leftLegTopX + 2.0 * scale,
+        barY - 1.0 * scale,
+        leftLegTopX + 3.0 * scale,
+        barY + 0.2 * scale
+      );
+      // Flow across to right end of crossbar
+      ctx.quadraticCurveTo(x + w * 0.55, barY + 0.4 * scale, barEndX, barEndY);
+      ctx.stroke();
 
-    // 3. Right downward leg with natural student rightward curl/foot at baseline
-    const rightLegTopX = x + w * 0.68;
-    ctx.beginPath();
-    ctx.moveTo(rightLegTopX, barY + 1.0 * scale);
-    ctx.lineTo(x + w * 0.70, bottomY - 3.2 * scale);
-    ctx.quadraticCurveTo(
-      x + w * 0.74,
-      bottomY + 0.6 * scale,
-      x + w * 0.98,
-      bottomY - 1.2 * scale
-    );
-    ctx.stroke();
+      // Downward left leg (main stem)
+      ctx.beginPath();
+      ctx.moveTo(leftLegTopX, barY + 1.0 * scale);
+      ctx.quadraticCurveTo(
+        leftLegTopX - (0.8 + r2 * 0.8) * scale,
+        y - fontSize * 0.22,
+        leftLegTopX - (1.2 + r4 * 0.8) * scale,
+        leftBottomY
+      );
+      ctx.stroke();
+
+      // Downward right leg with exit curl
+      ctx.beginPath();
+      ctx.moveTo(rightLegTopX, barY + barTiltDy * rightLegXRatio + 0.8 * scale);
+      const rightMidX = rightLegTopX + (0.5 + r1 * 1.2) * scale;
+      ctx.lineTo(rightMidX, rightBottomY - (2.5 + r3 * 1.5) * scale);
+      ctx.quadraticCurveTo(
+        rightMidX + (1.2 + r2 * 1.2) * scale,
+        rightBottomY + (0.4 + r4 * 0.5) * scale,
+        x + w * (0.88 + r5 * 0.16),
+        rightBottomY - (0.8 + r1 * 1.2) * scale
+      );
+      ctx.stroke();
+
+    } else if (styleRoll < 0.55) {
+      // --- Allograph 1: Rapid Speed Print π ---
+      // Swift horizontal crossbar + two energetic, slightly tilted downward strokes
+      ctx.beginPath();
+      ctx.moveTo(barStartX, barY + (r4 - 0.5) * 0.8 * scale);
+      ctx.lineTo(barEndX, barEndY + (r5 - 0.5) * 0.8 * scale);
+      ctx.stroke();
+
+      // Decisive left leg (straight downward with slight natural forward slant)
+      const leftSlantX = leftLegTopX - (0.8 + r3 * 1.4) * scale;
+      ctx.beginPath();
+      ctx.moveTo(leftLegTopX, barY + barTiltDy * leftLegXRatio + 0.5 * scale);
+      ctx.lineTo(leftSlantX, leftBottomY);
+      ctx.stroke();
+
+      // Right leg with short, crisp flick at base
+      const rightBarAtY = barY + barTiltDy * rightLegXRatio + 0.5 * scale;
+      const rightSlantX = rightLegTopX + (0.2 + r1 * 1.2) * scale;
+      const rightFlickX = rightSlantX + (2.2 + r2 * 2.0) * scale;
+      ctx.beginPath();
+      ctx.moveTo(rightLegTopX, rightBarAtY);
+      ctx.lineTo(rightSlantX, rightBottomY - 1.5 * scale);
+      ctx.lineTo(rightFlickX, rightBottomY);
+      ctx.stroke();
+
+    } else {
+      // --- Allograph 0: Classic Flowing Cursive π ---
+      // Undulating wavy crossbar with entry lift, inward-curving left leg, graceful right exit curl
+      const waveLift = (1.0 + r1 * 1.2) * scale;
+      const waveDip = (0.4 + r2 * 0.6) * scale;
+
+      ctx.beginPath();
+      ctx.moveTo(barStartX, barY + waveLift);
+      ctx.bezierCurveTo(
+        x + 2.5 * scale,
+        barY - waveLift * 0.8,
+        x + w * 0.50,
+        barY + waveDip,
+        barEndX,
+        barEndY + (r3 - 0.5) * 0.9 * scale
+      );
+      ctx.stroke();
+
+      // Left leg with gentle inward bowing
+      ctx.beginPath();
+      ctx.moveTo(leftLegTopX, barY + barTiltDy * leftLegXRatio + 0.8 * scale);
+      ctx.quadraticCurveTo(
+        leftLegTopX - (1.2 + r4 * 1.2) * scale,
+        y - fontSize * 0.22,
+        leftLegTopX - (0.8 + r2 * 0.8) * scale,
+        leftBottomY
+      );
+      ctx.stroke();
+
+      // Right leg with sweeping outward curl
+      const rightBarAtY = barY + barTiltDy * rightLegXRatio + 0.8 * scale;
+      const rightMidX = rightLegTopX + (0.4 + r1 * 1.4) * scale;
+      const curlEndX = x + w * (0.92 + r3 * 0.16);
+      ctx.beginPath();
+      ctx.moveTo(rightLegTopX, rightBarAtY);
+      ctx.lineTo(rightMidX, rightBottomY - (3.0 + r4 * 1.2) * scale);
+      ctx.quadraticCurveTo(
+        rightMidX + 1.2 * scale,
+        rightBottomY + 0.6 * scale,
+        curlEndX,
+        rightBottomY - (1.0 + r5 * 1.2) * scale
+      );
+      ctx.stroke();
+    }
 
     ctx.restore();
-    return w + 4.5 * scale;
+    return w + (4.0 + r1 * 2.5) * scale;
   }
 
   /**
