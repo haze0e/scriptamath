@@ -1,4 +1,10 @@
-import { HandwritingPersona, HandwritingStyleSettings, PenSettings, PaperScanSettings } from '../types';
+import {
+  HandwritingPersona,
+  HandwritingStyleSettings,
+  PenSettings,
+  PaperScanSettings,
+  CustomPersonaProfile,
+} from '../types';
 
 export interface HandwritingPersonaProfile {
   id: HandwritingPersona;
@@ -280,3 +286,71 @@ export const HANDWRITING_PERSONAS: HandwritingPersonaProfile[] = [
     },
   },
 ];
+
+// ── Custom Persona Persistence ───────────────────────────────────────────────
+export const CUSTOM_PERSONAS_STORAGE_KEY = 'scriptamath_custom_personas';
+
+export function loadCustomPersonas(): CustomPersonaProfile[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_PERSONAS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    console.warn('Failed to load custom personas from localStorage:', err);
+    return [];
+  }
+}
+
+export function saveCustomPersona(profile: CustomPersonaProfile): void {
+  try {
+    const existing = loadCustomPersonas().filter((p) => p.id !== profile.id);
+    existing.unshift(profile);
+    // Limit to 12 custom personas
+    const trimmed = existing.slice(0, 12);
+    localStorage.setItem(CUSTOM_PERSONAS_STORAGE_KEY, JSON.stringify(trimmed));
+  } catch (err) {
+    console.error('Failed to save custom persona to localStorage:', err);
+  }
+}
+
+export function deleteCustomPersona(id: string): void {
+  try {
+    const existing = loadCustomPersonas().filter((p) => p.id !== id);
+    localStorage.setItem(CUSTOM_PERSONAS_STORAGE_KEY, JSON.stringify(existing));
+  } catch (err) {
+    console.error('Failed to delete custom persona:', err);
+  }
+}
+
+// ── Master Human Variance Calculation ─────────────────────────────────────────
+export function applyVarianceToHandwriting(
+  current: HandwritingStyleSettings,
+  variance: number
+): HandwritingStyleSettings {
+  const clamped = Math.max(0, Math.min(10, variance));
+  const t = clamped / 10; // 0.0 to 1.0
+
+  return {
+    ...current,
+    humanVariance: clamped,
+    baselineWave: +(0.10 + t * 0.60).toFixed(2),
+    loopWarp: +(0.12 + t * 0.70).toFixed(2),
+    flyingDotChaos: +(0.10 + t * 0.75).toFixed(2),
+    marginWander: +(0.10 + t * 0.65).toFixed(2),
+    handFatigue: +(0.05 + t * 0.55).toFixed(2),
+    intraWordVelocity: +(0.20 + t * 0.65).toFixed(2),
+    scratchOutRate: t < 0.35 ? 0 : +((t - 0.35) * 0.024).toFixed(3),
+  };
+}
+
+export function inferVarianceFromSettings(settings: HandwritingStyleSettings): number {
+  if (typeof settings.humanVariance === 'number') {
+    return settings.humanVariance;
+  }
+  const waveNorm = ((settings.baselineWave ?? 0.35) - 0.10) / 0.60;
+  const loopNorm = ((settings.loopWarp ?? 0.40) - 0.12) / 0.70;
+  const dotNorm = ((settings.flyingDotChaos ?? 0.35) - 0.10) / 0.75;
+  const avg = (waveNorm + loopNorm + dotNorm) / 3;
+  return Math.round(Math.max(0, Math.min(10, avg * 10)) * 10) / 10;
+}

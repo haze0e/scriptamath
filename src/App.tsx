@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import opentype from 'opentype.js';
-import { AppState, AllographLibrary } from './types';
+import { AppState, AllographLibrary, CustomPersonaProfile } from './types';
 import { SAMPLE_ASSIGNMENTS } from './data/samples';
 import { HANDWRITING_PERSONAS } from './constants/personas';
 import { loadFontById, loadFontFromArrayBuffer } from './engine/fontLoader';
@@ -11,6 +11,7 @@ import { CanvasPreview } from './components/CanvasPreview';
 import { GlyphStudioModal } from './components/GlyphStudioModal';
 import { StudentizerModal } from './components/StudentizerModal';
 import { HistoryModal } from './components/HistoryModal';
+import { StyleLabModal } from './components/StyleLabModal';
 
 export const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(() => {
@@ -79,6 +80,9 @@ export const App: React.FC = () => {
 
   const [currentFont, setCurrentFont] = useState<opentype.Font | null>(null);
   const [isGlyphStudioOpen, setIsGlyphStudioOpen] = useState(false);
+  const [isStyleLabOpen, setIsStyleLabOpen] = useState(() => {
+    return new URLSearchParams(window.location.search).get('modal') === 'stylelab';
+  });
   const [isStudentizerOpen, setIsStudentizerOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [mobileView, setMobileView] = useState<'controls' | 'preview'>('controls');
@@ -138,6 +142,26 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleApplyPersona = (profile: CustomPersonaProfile) => {
+    setAppState((prev) => ({
+      ...prev,
+      handwriting: {
+        ...prev.handwriting,
+        ...profile.handwriting,
+      },
+      pen: {
+        ...prev.pen,
+        ...profile.pen,
+      },
+      paper: profile.paper
+        ? {
+            ...prev.paper,
+            ...profile.paper,
+          }
+        : prev.paper,
+    }));
+  };
+
   const handleRegenerateSeed = () => {
     const newSeed = Math.floor(Math.random() * 900000 + 100000);
     setAppState((prev) => ({
@@ -168,6 +192,7 @@ export const App: React.FC = () => {
             appState={appState}
             setAppState={setAppState}
             onOpenGlyphStudio={() => setIsGlyphStudioOpen(true)}
+            onOpenStyleLab={() => setIsStyleLabOpen(true)}
             onCustomFontUpload={handleCustomFontUpload}
             onRegenerateSeed={handleRegenerateSeed}
             onOpenStudentizer={() => setIsStudentizerOpen(true)}
@@ -212,6 +237,13 @@ export const App: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Style Lab Modal */}
+      <StyleLabModal
+        isOpen={isStyleLabOpen}
+        onClose={() => setIsStyleLabOpen(false)}
+        onApplyPersona={handleApplyPersona}
+      />
 
       {/* Glyph Studio Modal */}
       <GlyphStudioModal

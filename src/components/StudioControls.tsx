@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   FileText,
   Sliders,
@@ -8,22 +8,43 @@ import {
   PenTool,
   Check,
   ChevronDown,
+  ChevronRight,
   RotateCcw,
   BookOpen,
   Zap,
   Search,
   User,
   CheckCircle2,
+  Trash2,
+  Plus,
+  Save,
+  Gauge,
 } from 'lucide-react';
-import { AppState, PenColorPreset, HeadingColorPreset, PaperTemplateId, ScanFilter, HandwritingPersona } from '../types';
+import {
+  AppState,
+  PenColorPreset,
+  HeadingColorPreset,
+  PaperTemplateId,
+  ScanFilter,
+  HandwritingPersona,
+  CustomPersonaProfile,
+} from '../types';
 import { BUILTIN_FONTS, FontCategory } from '../engine/fontLoader';
 import { SAMPLE_ASSIGNMENTS } from '../data/samples';
-import { HANDWRITING_PERSONAS } from '../constants/personas';
+import {
+  HANDWRITING_PERSONAS,
+  loadCustomPersonas,
+  saveCustomPersona,
+  deleteCustomPersona,
+  applyVarianceToHandwriting,
+  inferVarianceFromSettings,
+} from '../constants/personas';
 
 interface StudioControlsProps {
   appState: AppState;
   setAppState: React.Dispatch<React.SetStateAction<AppState>>;
   onOpenGlyphStudio: () => void;
+  onOpenStyleLab?: () => void;
   onCustomFontUpload: (fontBuffer: ArrayBuffer, name: string) => void;
   onRegenerateSeed: () => void;
   onOpenStudentizer?: () => void;
@@ -33,35 +54,108 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
   appState,
   setAppState,
   onOpenGlyphStudio,
+  onOpenStyleLab,
   onCustomFontUpload,
   onRegenerateSeed,
   onOpenStudentizer,
 }) => {
-  const [activeTab, setActiveTab] = React.useState<'editor' | 'biomechanics' | 'paper'>('editor');
+  const [activeTab, setActiveTab] = React.useState<'editor' | 'biomechanics' | 'paper'>(() => {
+    const tabParam = new URLSearchParams(window.location.search).get('tab');
+    return tabParam === 'biomechanics' || tabParam === 'paper' ? tabParam : 'editor';
+  });
   const [fontCategory, setFontCategory] = React.useState<FontCategory>('All');
   const [fontSearch, setFontSearch] = React.useState('');
+  const [customPersonas, setCustomPersonas] = useState<CustomPersonaProfile[]>(() => loadCustomPersonas());
+  const [isSavingPersona, setIsSavingPersona] = useState(false);
+  const [newPersonaName, setNewPersonaName] = useState('');
+  const [showAdvancedPhysics, setShowAdvancedPhysics] = useState(false);
+  const [isFontPickerOpen, setIsFontPickerOpen] = useState(false);
+  const [showMathPalette, setShowMathPalette] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Sync custom personas if storage changes
+  useEffect(() => {
+    setCustomPersonas(loadCustomPersonas());
+  }, [appState.handwriting.persona]);
 
   const applyPersona = (personaId: HandwritingPersona) => {
     const profile = HANDWRITING_PERSONAS.find((p) => p.id === personaId);
-    if (!profile) return;
-    setAppState((prev) => ({
-      ...prev,
+    if (profile) {
+      setAppState((prev) => ({
+        ...prev,
+        handwriting: {
+          ...prev.handwriting,
+          ...profile.handwriting,
+        },
+        pen: {
+          ...prev.pen,
+          ...profile.pen,
+        },
+        paper: profile.paper
+          ? {
+              ...prev.paper,
+              ...profile.paper,
+            }
+          : prev.paper,
+      }));
+      return;
+    }
+
+    const custom = customPersonas.find((p) => p.id === personaId);
+    if (custom) {
+      setAppState((prev) => ({
+        ...prev,
+        handwriting: {
+          ...prev.handwriting,
+          ...custom.handwriting,
+        },
+        pen: {
+          ...prev.pen,
+          ...custom.pen,
+        },
+        paper: custom.paper
+          ? {
+              ...prev.paper,
+              ...custom.paper,
+            }
+          : prev.paper,
+      }));
+    }
+  };
+
+  const handleSaveCurrentPersona = () => {
+    const name = newPersonaName.trim() || `My Style ${customPersonas.length + 1}`;
+    const id = `custom-${Date.now()}`;
+    const profile: CustomPersonaProfile = {
+      id,
+      name,
+      subtitle: `Custom Style · ${appState.handwriting.fontFamily} · ${appState.handwriting.fontSize}px`,
+      createdAt: Date.now(),
+      badge: 'Custom Style',
       handwriting: {
-        ...prev.handwriting,
-        ...profile.handwriting,
+        ...appState.handwriting,
+        persona: id,
       },
-      pen: {
-        ...prev.pen,
-        ...profile.pen,
-      },
-      paper: profile.paper
-        ? {
-            ...prev.paper,
-            ...profile.paper,
-          }
-        : prev.paper,
+      pen: { ...appState.pen },
+      paper: { ...appState.paper },
+    };
+    saveCustomPersona(profile);
+    setCustomPersonas(loadCustomPersonas());
+    setAppState((p) => ({
+      ...p,
+      handwriting: { ...p.handwriting, persona: id },
     }));
+    setIsSavingPersona(false);
+    setNewPersonaName('');
+  };
+
+  const handleDeleteCustomPersona = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    deleteCustomPersona(id);
+    setCustomPersonas(loadCustomPersonas());
+    if (appState.handwriting.persona === id) {
+      applyPersona('chitesh-stem-notes');
+    }
   };
 
   const filteredFonts = BUILTIN_FONTS.filter((f) => {
@@ -182,33 +276,54 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
               </button>
             )}
 
-            {/* Handwriting Archetype 1-Click Cards */}
+            {/* Handwriting Archetype Quick Switcher Pills */}
             <div className="bg-[#181d2a] p-3 rounded-xl border border-[#262d42] space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
                   <User className="w-3.5 h-3.5 text-blue-400" />
-                  Handwriting Archetype / Persona
+                  <span>Handwriting Persona</span>
                 </span>
-                <span className="text-[10px] text-blue-400 font-mono">1-Click Setup</span>
+                {onOpenStyleLab && (
+                  <button
+                    onClick={onOpenStyleLab}
+                    className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 font-medium"
+                  >
+                    <PenTool className="w-3 h-3" />
+                    <span>Style Lab →</span>
+                  </button>
+                )}
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="flex flex-wrap gap-1.5">
                 {HANDWRITING_PERSONAS.map((p) => {
                   const isActive = appState.handwriting.persona === p.id;
                   return (
                     <button
                       key={p.id}
                       onClick={() => applyPersona(p.id)}
-                      className={`p-2 rounded-lg border text-left transition-all relative ${
+                      className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-all flex items-center gap-1 ${
                         isActive
-                          ? 'border-blue-500 bg-blue-950/40 text-blue-300 ring-1 ring-blue-500/50'
+                          ? 'border-blue-500 bg-blue-600 text-white shadow-sm ring-1 ring-blue-400/50'
                           : 'border-[#262d42] bg-[#11151f] text-slate-300 hover:bg-[#1a2130]'
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="text-xs font-semibold truncate">{p.name}</span>
-                        {isActive && <Check className="w-3 h-3 text-blue-400 shrink-0" />}
-                      </div>
-                      <div className="text-[9px] text-emerald-400/90 font-mono mt-0.5">{p.badge}</div>
+                      <span>{p.name.split("'s")[0] || p.name.split(' ')[0]}</span>
+                      {isActive && <Check className="w-3 h-3 text-blue-200 shrink-0" />}
+                    </button>
+                  );
+                })}
+                {customPersonas.map((cp) => {
+                  const isActive = appState.handwriting.persona === cp.id;
+                  return (
+                    <button
+                      key={cp.id}
+                      onClick={() => applyPersona(cp.id)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-all flex items-center gap-1 ${
+                        isActive
+                          ? 'border-indigo-500 bg-indigo-600 text-white shadow-sm ring-1 ring-indigo-400/50'
+                          : 'border-[#262d42] bg-[#11151f] text-slate-300 hover:bg-[#1a2130]'
+                      }`}
+                    >
+                      <span>✍️ {cp.name}</span>
                     </button>
                   );
                 })}
@@ -256,6 +371,12 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowMathPalette(!showMathPalette)}
+                    className="text-[11px] text-blue-400 hover:text-blue-300 px-2 py-0.5 rounded bg-[#11151f] border border-[#262d42] hover:bg-[#1e2535] transition-colors"
+                  >
+                    {showMathPalette ? '− Hide Math Palette' : '+ Math Palette'}
+                  </button>
                   <span className="text-[10px] text-slate-500 font-mono">
                     {appState.rawInput.length} chars
                   </span>
@@ -268,27 +389,29 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                 </div>
               </div>
 
-              {/* Quick Math Snippets Toolbar */}
-              <div className="flex flex-wrap gap-1 pt-0.5 pb-1">
-                {[
-                  { label: 'Fraction', code: '$\\frac{a}{b}$' },
-                  { label: 'Integral', code: '$\\int_0^\\infty f(x) dx$' },
-                  { label: 'Square Root', code: '$\\sqrt{x^2 + y^2}$' },
-                  { label: 'Boxed Ans', code: '$\\boxed{x = 42}$' },
-                  { label: 'Sum', code: '$\\sum_{i=1}^n x_i$' },
-                  { label: 'Implies ⇒', code: '$\\implies$' },
-                  { label: 'Therefore ∴', code: '$\\therefore$' },
-                  { label: 'Partial ∂', code: '$\\frac{\\partial u}{\\partial t}$' },
-                ].map((snip) => (
-                  <button
-                    key={snip.label}
-                    onClick={() => insertSnippet(snip.code)}
-                    className="px-2 py-1 text-[11px] rounded bg-[#11151f] hover:bg-[#20273a] border border-[#262d42] hover:border-blue-500/50 text-slate-300 hover:text-white font-mono transition-colors"
-                  >
-                    + {snip.label}
-                  </button>
-                ))}
-              </div>
+              {/* Quick Math Snippets Toolbar (Collapsible) */}
+              {showMathPalette && (
+                <div className="flex flex-wrap gap-1 pt-0.5 pb-1 animate-fade-in border-b border-[#222a3d]">
+                  {[
+                    { label: 'Fraction', code: '$\\frac{a}{b}$' },
+                    { label: 'Integral', code: '$\\int_0^\\infty f(x) dx$' },
+                    { label: 'Square Root', code: '$\\sqrt{x^2 + y^2}$' },
+                    { label: 'Boxed Ans', code: '$\\boxed{x = 42}$' },
+                    { label: 'Sum', code: '$\\sum_{i=1}^n x_i$' },
+                    { label: 'Implies ⇒', code: '$\\implies$' },
+                    { label: 'Therefore ∴', code: '$\\therefore$' },
+                    { label: 'Partial ∂', code: '$\\frac{\\partial u}{\\partial t}$' },
+                  ].map((snip) => (
+                    <button
+                      key={snip.label}
+                      onClick={() => insertSnippet(snip.code)}
+                      className="px-2 py-1 text-[11px] rounded bg-[#11151f] hover:bg-[#20273a] border border-[#262d42] hover:border-blue-500/50 text-slate-300 hover:text-white font-mono transition-colors"
+                    >
+                      + {snip.label}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* Textarea */}
               <textarea
@@ -348,112 +471,300 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
         )}
 
         {/* ==================== TAB 2: BIOMECHANICS & ANTI-CLONE ==================== */}
-        {activeTab === 'biomechanics' && (
-          <div className="space-y-5">
+        {activeTab === 'biomechanics' && (() => {
+          const currentVariance = inferVarianceFromSettings(appState.handwriting);
+          const activeFont = BUILTIN_FONTS.find((f) => f.id === appState.handwriting.fontFamily) || {
+            id: appState.handwriting.fontFamily,
+            name: appState.handwriting.fontFamily,
+            category: 'Custom Font',
+            description: 'User uploaded font',
+          };
 
-            {/* Font & Handwriting Studio Actions */}
-            <div className="bg-[#181d2a] p-3.5 rounded-xl border border-[#262d42] space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-semibold text-slate-200">
-                    Handwriting Font ({BUILTIN_FONTS.length} Authentic Styles)
-                  </span>
-                  <div className="text-[10px] text-slate-400">
-                    Active: <span className="text-blue-400 font-medium">{appState.handwriting.fontFamily}</span>
+          return (
+            <div className="space-y-4">
+              {/* 1. Handwriting Persona Pills & Style Lab Launch */}
+              <div className="bg-[#181d2a] p-3.5 rounded-xl border border-[#262d42] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <User className="w-4 h-4 text-blue-400" />
+                    <span className="text-xs font-semibold text-slate-200">
+                      Handwriting Persona &amp; Style Lab
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {onOpenStyleLab && (
+                      <button
+                        onClick={onOpenStyleLab}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-[11px] font-semibold shadow-sm transition-all"
+                        title="Draw sample words on screen to calibrate and clone your handwriting"
+                      >
+                        <PenTool className="w-3 h-3" />
+                        <span>Draw Style</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setIsSavingPersona(!isSavingPersona)}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#11151f] hover:bg-[#1f2638] text-slate-300 hover:text-white border border-[#262d42] text-[11px] transition-colors"
+                      title="Save current handwriting and pen settings as a custom preset"
+                    >
+                      <Save className="w-3 h-3 text-blue-400" />
+                      <span>Save</span>
+                    </button>
                   </div>
                 </div>
-                <span className="text-[10px] text-emerald-400 font-mono">Parsed via opentype.js</span>
-              </div>
 
-              {/* Category Filter Pills */}
-              <div className="flex flex-wrap gap-1">
-                {(['All', "Boy's Cursive", "Girl's Cursive", 'STEM & Tech', 'Fluid Cursive', 'College Print', 'Fast & Scratch'] as FontCategory[]).map(
-                  (cat) => (
-                    <button
-                      key={cat}
-                      onClick={() => setFontCategory(cat)}
-                      className={`px-2 py-1 rounded-md text-[10px] font-medium transition-colors ${
-                        fontCategory === cat
-                          ? 'bg-blue-600 text-white shadow-sm'
-                          : 'bg-[#11151f] text-slate-400 hover:text-slate-200 hover:bg-[#1f2638] border border-[#22293d]'
-                      }`}
-                    >
-                      {cat}
-                    </button>
-                  )
+                {/* Inline Save Preset Form */}
+                {isSavingPersona && (
+                  <div className="bg-[#11151f] p-2.5 rounded-lg border border-blue-500/40 space-y-2 animate-fade-in">
+                    <div className="text-[11px] font-medium text-slate-300">Name this custom handwriting preset:</div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="e.g. My Fast Calculus Style"
+                        value={newPersonaName}
+                        onChange={(e) => setNewPersonaName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSaveCurrentPersona();
+                        }}
+                        className="flex-1 bg-[#0c0e14] border border-[#262d42] rounded px-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                        autoFocus
+                      />
+                      <button
+                        onClick={handleSaveCurrentPersona}
+                        className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-medium"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setIsSavingPersona(false)}
+                        className="px-2 py-1 text-slate-400 hover:text-white text-xs"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
                 )}
+
+                {/* Style Pills Row */}
+                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  {/* Built-in Presets */}
+                  {HANDWRITING_PERSONAS.map((p) => {
+                    const isActive = appState.handwriting.persona === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        onClick={() => applyPersona(p.id)}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all flex items-center gap-1.5 ${
+                          isActive
+                            ? 'bg-blue-600 text-white border-blue-500 shadow-sm ring-1 ring-blue-400/50'
+                            : 'bg-[#11151f] text-slate-300 hover:text-white hover:bg-[#1a2130] border-[#262d42]'
+                        }`}
+                      >
+                        <span>{p.name.split("'s")[0] || p.name.split(' ')[0]}</span>
+                        {isActive && <Check className="w-3 h-3 text-blue-200 shrink-0" />}
+                      </button>
+                    );
+                  })}
+
+                  {/* Custom User-Calibrated Personas */}
+                  {customPersonas.map((cp) => {
+                    const isActive = appState.handwriting.persona === cp.id;
+                    return (
+                      <div
+                        key={cp.id}
+                        onClick={() => applyPersona(cp.id)}
+                        className={`group px-2.5 py-1.5 rounded-lg text-xs font-medium border cursor-pointer transition-all flex items-center gap-1.5 ${
+                          isActive
+                            ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm ring-1 ring-indigo-400/50'
+                            : 'bg-[#11151f] text-slate-300 hover:text-white hover:bg-[#1a2130] border-[#262d42]'
+                        }`}
+                      >
+                        <span>✍️ {cp.name}</span>
+                        <button
+                          onClick={(e) => handleDeleteCustomPersona(cp.id, e)}
+                          className="opacity-40 group-hover:opacity-100 hover:text-red-300 transition-opacity p-0.5"
+                          title="Delete custom style"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
-              {/* Search Bar */}
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+              {/* 2. Master Human Variance Bias Slider */}
+              <div className="bg-[#181d2a] p-3.5 rounded-xl border border-[#262d42] space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                      <Gauge className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Human Variance &amp; Exam Rush Bias</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">
+                      {currentVariance <= 3.0
+                        ? 'Neat Study Notes · Minimal Jitter & Tidy Loops'
+                        : currentVariance <= 6.5
+                        ? 'Natural Student Notes · Organic Jitter & Tilt'
+                        : 'Rushed Exam Derivation · Speed Drift & Skips'}
+                    </div>
+                  </div>
+                  <span className="font-mono text-xs font-bold text-blue-400 bg-[#11151f] px-2 py-0.5 rounded border border-[#262d42]">
+                    {currentVariance.toFixed(1)} / 10
+                  </span>
+                </div>
+
                 <input
-                  type="text"
-                  placeholder="Filter by name or style (e.g. ballpoint, cursive, blueprint)..."
-                  value={fontSearch}
-                  onChange={(e) => setFontSearch(e.target.value)}
-                  className="w-full bg-[#11151f] border border-[#262d42] rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                  type="range"
+                  min="0.5"
+                  max="10"
+                  step="0.5"
+                  value={currentVariance}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    setAppState((p) => ({
+                      ...p,
+                      handwriting: applyVarianceToHandwriting(p.handwriting, v),
+                    }));
+                  }}
+                  className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg cursor-pointer"
                 />
-              </div>
 
-              {/* Scrollable Font Cards Grid */}
-              <div className="grid grid-cols-2 gap-1.5 max-h-[260px] overflow-y-auto pr-1">
-                {filteredFonts.map((font) => {
-                  const isSelected = appState.handwriting.fontFamily === font.id;
-                  return (
+                <div className="grid grid-cols-3 gap-1.5 pt-0.5">
+                  {[
+                    { label: '📘 Neat Study', val: 2.0 },
+                    { label: '📝 Natural Hand', val: 5.0 },
+                    { label: '⚡ Rushed Exam', val: 8.5 },
+                  ].map((preset) => (
                     <button
-                      key={font.id}
+                      key={preset.label}
                       onClick={() =>
-                        setAppState((prev) => ({
-                          ...prev,
-                          handwriting: { ...prev.handwriting, fontFamily: font.id },
+                        setAppState((p) => ({
+                          ...p,
+                          handwriting: applyVarianceToHandwriting(p.handwriting, preset.val),
                         }))
                       }
-                      className={`px-2.5 py-2 rounded-lg border text-left transition-all relative ${
-                        isSelected
-                          ? 'border-blue-500 bg-blue-950/40 text-blue-300 font-medium ring-1 ring-blue-500/50'
-                          : 'border-[#262d42] bg-[#11151f] text-slate-300 hover:bg-[#1a2130]'
+                      className={`py-1 text-[11px] font-medium rounded border transition-colors ${
+                        Math.abs(currentVariance - preset.val) < 0.5
+                          ? 'bg-blue-600/30 border-blue-500 text-blue-300'
+                          : 'bg-[#11151f] border-[#222a3d] text-slate-400 hover:text-slate-200'
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="text-xs font-semibold truncate">{font.name}</span>
-                        {isSelected && <Check className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />}
-                      </div>
-                      <div className="text-[10px] text-slate-400 line-clamp-1 mt-0.5">{font.description}</div>
-                      <div className="text-[9px] text-slate-500 mt-1 uppercase tracking-wider font-mono">
-                        {font.category}
-                      </div>
+                      {preset.label}
                     </button>
-                  );
-                })}
+                  ))}
+                </div>
               </div>
 
-              {/* Upload Custom Font & Glyph Studio */}
-              <div className="flex gap-2 pt-1">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".ttf,.otf"
-                  onChange={handleFontUpload}
-                  className="hidden"
-                />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-[#262d42] bg-[#11151f] hover:bg-[#1a2030] text-xs text-slate-300 hover:text-white transition-colors"
-                >
-                  <Upload className="w-3.5 h-3.5 text-blue-400" />
-                  <span>Upload .TTF Font</span>
-                </button>
+              {/* 3. Compact Handwriting Font Card & Picker */}
+              <div className="bg-[#181d2a] p-3.5 rounded-xl border border-[#262d42] space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-semibold text-slate-200">Handwriting Font Skeleton</span>
+                    <div className="text-[11px] text-blue-400 font-medium">
+                      {activeFont.name} <span className="text-slate-500 text-[10px]">({activeFont.category})</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setIsFontPickerOpen(!isFontPickerOpen)}
+                    className="flex items-center gap-1 text-[11px] text-slate-300 hover:text-white bg-[#11151f] hover:bg-[#1e2535] px-2.5 py-1 rounded-lg border border-[#262d42] transition-colors"
+                  >
+                    <span>{isFontPickerOpen ? 'Hide Fonts' : 'Browse All Fonts'}</span>
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isFontPickerOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                </div>
 
-                <button
-                  onClick={onOpenGlyphStudio}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-xs text-white font-medium shadow transition-all"
-                >
-                  <PenTool className="w-3.5 h-3.5" />
-                  <span>Clone My Handwriting</span>
-                </button>
+                {/* Collapsible Font Grid */}
+                {isFontPickerOpen && (
+                  <div className="space-y-2.5 pt-1 border-t border-[#222a3d] animate-fade-in">
+                    {/* Category Filter Pills */}
+                    <div className="flex flex-wrap gap-1">
+                      {(['All', "Boy's Cursive", "Girl's Cursive", 'STEM & Tech', 'Fluid Cursive', 'College Print', 'Fast & Scratch'] as FontCategory[]).map(
+                        (cat) => (
+                          <button
+                            key={cat}
+                            onClick={() => setFontCategory(cat)}
+                            className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                              fontCategory === cat
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-[#11151f] text-slate-400 hover:text-slate-200 border border-[#22293d]'
+                            }`}
+                          >
+                            {cat}
+                          </button>
+                        )
+                      )}
+                    </div>
+
+                    {/* Search Bar */}
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Search fonts (e.g. ballpoint, cursive, blueprint)..."
+                        value={fontSearch}
+                        onChange={(e) => setFontSearch(e.target.value)}
+                        className="w-full bg-[#11151f] border border-[#262d42] rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+
+                    {/* Compact Font Grid */}
+                    <div className="grid grid-cols-2 gap-1.5 max-h-[200px] overflow-y-auto pr-1">
+                      {filteredFonts.map((font) => {
+                        const isSelected = appState.handwriting.fontFamily === font.id;
+                        return (
+                          <button
+                            key={font.id}
+                            onClick={() =>
+                              setAppState((prev) => ({
+                                ...prev,
+                                handwriting: { ...prev.handwriting, fontFamily: font.id },
+                              }))
+                            }
+                            className={`px-2.5 py-1.5 rounded-lg border text-left transition-all ${
+                              isSelected
+                                ? 'border-blue-500 bg-blue-950/40 text-blue-300 font-medium'
+                                : 'border-[#262d42] bg-[#11151f] text-slate-300 hover:bg-[#1a2130]'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-xs font-semibold truncate">{font.name}</span>
+                              {isSelected && <Check className="w-3 h-3 text-blue-400 shrink-0" />}
+                            </div>
+                            <div className="text-[9px] text-slate-500 uppercase font-mono mt-0.5">{font.category}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Upload & Clone Buttons */}
+                <div className="flex gap-2 pt-0.5">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".ttf,.otf"
+                    onChange={handleFontUpload}
+                    className="hidden"
+                  />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#262d42] bg-[#11151f] hover:bg-[#1a2030] text-xs text-slate-300 hover:text-white transition-colors"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Upload .TTF Font</span>
+                  </button>
+
+                  <button
+                    onClick={onOpenGlyphStudio}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#11151f] hover:bg-[#1a2030] border border-[#262d42] text-xs text-slate-300 hover:text-white transition-colors"
+                  >
+                    <PenTool className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Glyph Studio</span>
+                  </button>
+                </div>
               </div>
-            </div>
 
             {/* Handwriting Font Size & Scale Control */}
             <div className="bg-[#181d2a] p-3.5 rounded-xl border border-[#262d42] space-y-2.5">
@@ -597,313 +908,315 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
               </div>
             </div>
 
-            {/* Biomechanical Sliders */}
-            <div className="space-y-4">
-              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Topological Warping &amp; Motor Physics
-              </div>
-
-              {/* 1. Topological Loop Warp */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-300 font-medium">Topological 3-Zone Loop Warp</span>
-                  <span className="font-mono text-blue-400">
-                    {Math.round(appState.handwriting.loopWarp * 100)}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={appState.handwriting.loopWarp}
-                  onChange={(e) =>
-                    setAppState((p) => ({
-                      ...p,
-                      handwriting: { ...p.handwriting, loopWarp: parseFloat(e.target.value) },
-                    }))
-                  }
-                  className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg cursor-pointer"
-                />
-                <div className="text-[10px] text-slate-400">
-                  Independently tilts ascender loops (b,d,h), perturbs core loops (a,e,o) with 2D simplex noise, and varies descender sweeps (g,y).
-                </div>
-              </div>
-
-              {/* 2. Pseudo-Cursive Ligature Rate */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-300 font-medium">Cursive Ligature Rate (Air-Drag)</span>
-                  <span className="font-mono text-blue-400">
-                    {Math.round(appState.handwriting.ligatureRate * 100)}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={appState.handwriting.ligatureRate}
-                  onChange={(e) =>
-                    setAppState((p) => ({
-                      ...p,
-                      handwriting: { ...p.handwriting, ligatureRate: parseFloat(e.target.value) },
-                    }))
-                  }
-                  className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg cursor-pointer"
-                />
-                <div className="text-[10px] text-slate-400">
-                  Connects common bigrams (th, he, in, er, an) with low-opacity quadratic Bezier air-drag strokes.
-                </div>
-              </div>
-
-              {/* 3. Flying Dot Chaos */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-300 font-medium">Flying &apos;i&apos;/&apos;j&apos; Dot Drift &amp; Flick</span>
-                  <span className="font-mono text-blue-400">
-                    {Math.round(appState.handwriting.flyingDotChaos * 100)}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={appState.handwriting.flyingDotChaos}
-                  onChange={(e) =>
-                    setAppState((p) => ({
-                      ...p,
-                      handwriting: { ...p.handwriting, flyingDotChaos: parseFloat(e.target.value) },
-                    }))
-                  }
-                  className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg cursor-pointer"
-                />
-                <div className="text-[10px] text-slate-400">
-                  Suppresses rigid font tittles; detaches dots, drifts rightwards with hand momentum, and morphs into quick dashes.
-                </div>
-              </div>
-
-              {/* 4. Toggles: Shared Crossbar & Anti-Duplication */}
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <label className="flex items-start gap-2 bg-[#181d2a] p-2.5 rounded-lg border border-[#262d42] cursor-pointer hover:bg-[#1e2435]">
-                  <input
-                    type="checkbox"
-                    checked={appState.handwriting.sharedCrossbar}
-                    onChange={(e) =>
-                      setAppState((p) => ({
-                        ...p,
-                        handwriting: { ...p.handwriting, sharedCrossbar: e.target.checked },
-                      }))
-                    }
-                    className="mt-0.5 rounded text-blue-500 focus:ring-0"
-                  />
-                  <div>
-                    <div className="text-xs font-medium text-slate-200">Shared &apos;tt&apos; Crossbars</div>
-                    <div className="text-[10px] text-slate-400">Single sweeping stroke for double tt / ff</div>
+              {/* 5. Collapsible Accordion: Advanced Motor Physics (12 Parameters) */}
+              <div className="bg-[#181d2a] rounded-xl border border-[#262d42] overflow-hidden">
+                <button
+                  onClick={() => setShowAdvancedPhysics(!showAdvancedPhysics)}
+                  className="w-full p-3.5 flex items-center justify-between text-left hover:bg-[#1d2333] transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Sliders className="w-4 h-4 text-blue-400" />
+                    <div>
+                      <div className="text-xs font-semibold text-slate-200">
+                        Advanced Motor Physics (12 Parameters)
+                      </div>
+                      <div className="text-[10px] text-slate-400">
+                        Fine-tune individual topological warps, ligatures, jitter &amp; fatigue
+                      </div>
+                    </div>
                   </div>
-                </label>
-
-                <label className="flex items-start gap-2 bg-[#181d2a] p-2.5 rounded-lg border border-[#262d42] cursor-pointer hover:bg-[#1e2435]">
-                  <input
-                    type="checkbox"
-                    checked={appState.handwriting.antiDuplication}
-                    onChange={(e) =>
-                      setAppState((p) => ({
-                        ...p,
-                        handwriting: { ...p.handwriting, antiDuplication: e.target.checked },
-                      }))
-                    }
-                    className="mt-0.5 rounded text-blue-500 focus:ring-0"
-                  />
-                  <div>
-                    <div className="text-xs font-medium text-slate-200">Anti-Clone Rule</div>
-                    <div className="text-[10px] text-slate-400">Inverts deformation on ee, oo, ll, 11</div>
-                  </div>
-                </label>
-              </div>
-
-              {/* 5. Intra-word velocity & Baseline wave */}
-              <div className="grid grid-cols-2 gap-3 pt-2">
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-300">Intra-Word Speed</span>
-                    <span className="font-mono text-blue-400">
-                      {Math.round(appState.handwriting.intraWordVelocity * 100)}%
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-blue-400 font-mono bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/30">
+                      Auto-Balanced
                     </span>
+                    <ChevronDown
+                      className={`w-4 h-4 text-slate-400 transition-transform ${
+                        showAdvancedPhysics ? 'rotate-180' : ''
+                      }`}
+                    />
                   </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={appState.handwriting.intraWordVelocity}
-                    onChange={(e) =>
-                      setAppState((p) => ({
-                        ...p,
-                        handwriting: { ...p.handwriting, intraWordVelocity: parseFloat(e.target.value) },
-                      }))
-                    }
-                    className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg"
-                  />
-                </div>
+                </button>
 
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-300">Baseline Wave</span>
-                    <span className="font-mono text-blue-400">
-                      {Math.round(appState.handwriting.baselineWave * 100)}%
-                    </span>
+                {showAdvancedPhysics && (
+                  <div className="p-3.5 border-t border-[#262d42] space-y-3.5 bg-[#141824] animate-fade-in">
+                    {/* Loop Warp */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-slate-300">Topological 3-Zone Loop Warp</span>
+                        <span className="font-mono text-blue-400">
+                          {Math.round(appState.handwriting.loopWarp * 100)}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value={appState.handwriting.loopWarp}
+                        onChange={(e) =>
+                          setAppState((p) => ({
+                            ...p,
+                            handwriting: { ...p.handwriting, loopWarp: parseFloat(e.target.value) },
+                          }))
+                        }
+                        className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Ligature Rate */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-slate-300">Cursive Ligatures (Air-Drag)</span>
+                        <span className="font-mono text-blue-400">
+                          {Math.round(appState.handwriting.ligatureRate * 100)}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value={appState.handwriting.ligatureRate}
+                        onChange={(e) =>
+                          setAppState((p) => ({
+                            ...p,
+                            handwriting: { ...p.handwriting, ligatureRate: parseFloat(e.target.value) },
+                          }))
+                        }
+                        className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Flying Dot Chaos */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-slate-300">Flying &apos;i&apos;/&apos;j&apos; Dot Drift</span>
+                        <span className="font-mono text-blue-400">
+                          {Math.round(appState.handwriting.flyingDotChaos * 100)}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        value={appState.handwriting.flyingDotChaos}
+                        onChange={(e) =>
+                          setAppState((p) => ({
+                            ...p,
+                            handwriting: { ...p.handwriting, flyingDotChaos: parseFloat(e.target.value) },
+                          }))
+                        }
+                        className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Shared Crossbar & Anti-Duplication */}
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <label className="flex items-start gap-2 bg-[#11151f] p-2 rounded-lg border border-[#262d42] cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={appState.handwriting.sharedCrossbar}
+                          onChange={(e) =>
+                            setAppState((p) => ({
+                              ...p,
+                              handwriting: { ...p.handwriting, sharedCrossbar: e.target.checked },
+                            }))
+                          }
+                          className="mt-0.5 rounded text-blue-500 focus:ring-0"
+                        />
+                        <span className="text-xs text-slate-300">Shared &apos;tt&apos; Crossbar</span>
+                      </label>
+
+                      <label className="flex items-start gap-2 bg-[#11151f] p-2 rounded-lg border border-[#262d42] cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={appState.handwriting.antiDuplication}
+                          onChange={(e) =>
+                            setAppState((p) => ({
+                              ...p,
+                              handwriting: { ...p.handwriting, antiDuplication: e.target.checked },
+                            }))
+                          }
+                          className="mt-0.5 rounded text-blue-500 focus:ring-0"
+                        />
+                        <span className="text-xs text-slate-300">Anti-Clone Rule</span>
+                      </label>
+                    </div>
+
+                    {/* Slant Angle */}
+                    <div className="space-y-1 pt-1 border-t border-[#222a3d]">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-slate-300">Forward Slant Angle</span>
+                        <span className="font-mono text-blue-400">
+                          {(appState.handwriting.slantAngle ?? 0) > 0 ? `+${appState.handwriting.slantAngle}°` : `${appState.handwriting.slantAngle ?? 0}°`}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="-5"
+                        max="25"
+                        step="1"
+                        value={appState.handwriting.slantAngle ?? 0}
+                        onChange={(e) =>
+                          setAppState((p) => ({
+                            ...p,
+                            handwriting: { ...p.handwriting, slantAngle: parseInt(e.target.value, 10) },
+                          }))
+                        }
+                        className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Baseline Wave & Intra-Word Velocity */}
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-400 text-[11px]">Baseline Wave</span>
+                          <span className="font-mono text-blue-400 text-[11px]">
+                            {Math.round(appState.handwriting.baselineWave * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={appState.handwriting.baselineWave}
+                          onChange={(e) =>
+                            setAppState((p) => ({
+                              ...p,
+                              handwriting: { ...p.handwriting, baselineWave: parseFloat(e.target.value) },
+                            }))
+                          }
+                          className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-400 text-[11px]">Intra-Word Speed</span>
+                          <span className="font-mono text-blue-400 text-[11px]">
+                            {Math.round(appState.handwriting.intraWordVelocity * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={appState.handwriting.intraWordVelocity}
+                          onChange={(e) =>
+                            setAppState((p) => ({
+                              ...p,
+                              handwriting: { ...p.handwriting, intraWordVelocity: parseFloat(e.target.value) },
+                            }))
+                          }
+                          className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Margin Squeeze & Scratch-Outs */}
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-400 text-[11px]">Margin Squeeze</span>
+                          <span className="font-mono text-blue-400 text-[11px]">
+                            {Math.round(appState.handwriting.marginSqueezeRate * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={appState.handwriting.marginSqueezeRate}
+                          onChange={(e) =>
+                            setAppState((p) => ({
+                              ...p,
+                              handwriting: { ...p.handwriting, marginSqueezeRate: parseFloat(e.target.value) },
+                            }))
+                          }
+                          className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-400 text-[11px]">Scratch-Outs</span>
+                          <span className="font-mono text-blue-400 text-[11px]">
+                            {(appState.handwriting.scratchOutRate * 100).toFixed(1)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="0.05"
+                          step="0.005"
+                          value={appState.handwriting.scratchOutRate}
+                          onChange={(e) =>
+                            setAppState((p) => ({
+                              ...p,
+                              handwriting: { ...p.handwriting, scratchOutRate: parseFloat(e.target.value) },
+                            }))
+                          }
+                          className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Margin Wander & Fatigue */}
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-400 text-[11px]">Margin Wander</span>
+                          <span className="font-mono text-blue-400 text-[11px]">
+                            {Math.round(appState.handwriting.marginWander * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={appState.handwriting.marginWander}
+                          onChange={(e) =>
+                            setAppState((p) => ({
+                              ...p,
+                              handwriting: { ...p.handwriting, marginWander: parseFloat(e.target.value) },
+                            }))
+                          }
+                          className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-400 text-[11px]">Cumulative Fatigue</span>
+                          <span className="font-mono text-blue-400 text-[11px]">
+                            {Math.round(appState.handwriting.handFatigue * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={appState.handwriting.handFatigue}
+                          onChange={(e) =>
+                            setAppState((p) => ({
+                              ...p,
+                              handwriting: { ...p.handwriting, handFatigue: parseFloat(e.target.value) },
+                            }))
+                          }
+                          className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg"
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={appState.handwriting.baselineWave}
-                    onChange={(e) =>
-                      setAppState((p) => ({
-                        ...p,
-                        handwriting: { ...p.handwriting, baselineWave: parseFloat(e.target.value) },
-                      }))
-                    }
-                    className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg"
-                  />
-                </div>
+                )}
               </div>
-
-              {/* 6. Margin Squeeze & Scratch-Outs */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-300">Margin Squeeze</span>
-                    <span className="font-mono text-blue-400">
-                      {Math.round(appState.handwriting.marginSqueezeRate * 100)}%
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={appState.handwriting.marginSqueezeRate}
-                    onChange={(e) =>
-                      setAppState((p) => ({
-                        ...p,
-                        handwriting: { ...p.handwriting, marginSqueezeRate: parseFloat(e.target.value) },
-                      }))
-                    }
-                    className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg"
-                  />
-                  <div className="text-[10px] text-slate-400">Crams words into remaining margin space</div>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-300">Student Scratch-Outs</span>
-                    <span className="font-mono text-blue-400">
-                      {(appState.handwriting.scratchOutRate * 100).toFixed(1)}%
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="0.05"
-                    step="0.005"
-                    value={appState.handwriting.scratchOutRate}
-                    onChange={(e) =>
-                      setAppState((p) => ({
-                        ...p,
-                        handwriting: { ...p.handwriting, scratchOutRate: parseFloat(e.target.value) },
-                      }))
-                    }
-                    className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg"
-                  />
-                  <div className="text-[10px] text-slate-400">Organic typo cross-outs and fixes</div>
-                </div>
-              </div>
-
-              {/* Hand Fatigue & Left Margin Wander */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-300">Margin Wander</span>
-                    <span className="font-mono text-blue-400">
-                      {Math.round(appState.handwriting.marginWander * 100)}%
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={appState.handwriting.marginWander}
-                    onChange={(e) =>
-                      setAppState((p) => ({
-                        ...p,
-                        handwriting: { ...p.handwriting, marginWander: parseFloat(e.target.value) },
-                      }))
-                    }
-                    className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-300">Cumulative Fatigue</span>
-                    <span className="font-mono text-blue-400">
-                      {Math.round(appState.handwriting.handFatigue * 100)}%
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={appState.handwriting.handFatigue}
-                    onChange={(e) =>
-                      setAppState((p) => ({
-                        ...p,
-                        handwriting: { ...p.handwriting, handFatigue: parseFloat(e.target.value) },
-                      }))
-                    }
-                    className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg"
-                  />
-                </div>
-              </div>
-
-              {/* Forward Slant Angle */}
-              <div className="space-y-1 pt-2 border-t border-[#262d42]">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-300 font-medium">Forward Slant Angle</span>
-                  <span className="font-mono text-blue-400">
-                    {(appState.handwriting.slantAngle ?? 0) > 0 ? `+${appState.handwriting.slantAngle}°` : `${appState.handwriting.slantAngle ?? 0}°`}
-                    {(appState.handwriting.slantAngle ?? 0) >= 12
-                      ? " (Boy's High-Speed Slant)"
-                      : (appState.handwriting.slantAngle ?? 0) >= 3
-                      ? " (Girl's Gentle Tilt)"
-                      : " (Upright)"}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="-5"
-                  max="25"
-                  step="1"
-                  value={appState.handwriting.slantAngle ?? 0}
-                  onChange={(e) =>
-                    setAppState((p) => ({
-                      ...p,
-                      handwriting: { ...p.handwriting, slantAngle: parseInt(e.target.value, 10) },
-                    }))
-                  }
-                  className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg cursor-pointer"
-                />
-                <div className="text-[10px] text-slate-400">
-                  Authentic slant: 14°-18° for rushed STEM cursive, 2°-6° for rounded college hand.
-                </div>
-              </div>
-            </div>
 
             {/* Authentic Assignment Formatting: Circled Questions & Answer Bubbles */}
             <div className="bg-[#181d2a] p-3.5 rounded-xl border border-[#262d42] space-y-3">
@@ -1051,7 +1364,8 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
               </label>
             </div>
           </div>
-        )}
+        );
+      })()}
 
         {/* ==================== TAB 3: PAPER & CAMSCANNER ==================== */}
         {activeTab === 'paper' && (

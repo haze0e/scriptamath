@@ -9,7 +9,20 @@ export type HandwritingPersona =
   | 'girl-neat-cursive'
   | 'exam-prep-rushed'
   | 'clean-lecture'
-  | 'custom';
+  | 'custom'
+  | (string & {});
+
+export interface CustomPersonaProfile {
+  id: string;
+  name: string;
+  subtitle?: string;
+  description?: string;
+  badge?: string;
+  createdAt: number;
+  handwriting: Partial<HandwritingStyleSettings>;
+  pen: Partial<PenSettings>;
+  paper?: Partial<PaperScanSettings>;
+}
 
 export interface HandwritingStyleSettings {
   // Preset Persona
@@ -36,6 +49,9 @@ export interface HandwritingStyleSettings {
   handFatigue: number; // 0 to 1 (cumulative slant, spacing, loose loops down page)
   scratchOutRate: number; // 0 to 0.05 (realistic student typo cross-outs and caret insertions)
   randomSeed: number;
+
+  // Master Human Variance Bias Slider (0.0 to 10.0)
+  humanVariance?: number; // 0.0 (ultra-neat lecture print) to 10.0 (rushed exam scribble), default 5.0
 
   // Authentic Student Margin & Answer Styles
   circledQuestionLabels?: boolean; // Draw hand-sketched circle around Q1, (1), (a), etc. in margin
