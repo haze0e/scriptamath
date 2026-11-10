@@ -37,6 +37,7 @@ export interface WristClusterState {
 export interface PageLayoutData {
   pageNumber: number;
   blocks: DocumentBlock[];
+  questionNums?: number[];
 }
 
 /**
@@ -114,6 +115,7 @@ export class PageEngine {
 
     let currentPageBlocks: DocumentBlock[] = [];
     let currentLineCount = 0;
+    let activeQuestionNum: number | undefined;
 
     for (const block of blocks) {
       let neededLines = 1;
@@ -125,12 +127,22 @@ export class PageEngine {
           neededLines = block.level === 1 ? 2 : 1;
         }
       } else if (block.type === 'math-step') {
-        const hasFraction = block.tokens.some((t) => t.type === 'fraction');
-        const matrixToken = block.tokens.find((t) => t.type === 'matrix') as MathMatrix | undefined;
+        const hasFraction = block.tokens.some((t) => t.type === 'fraction' || (t.type === 'boxed' && t.content.some((it) => it.type === 'fraction')));
+        const hasBoxed = block.tokens.some((t) => t.type === 'boxed');
+        const matrixToken = block.tokens.find((t) => t.type === 'matrix' || (t.type === 'boxed' && t.content.some((it) => it.type === 'matrix'))) as MathMatrix | undefined;
+        if (matrixToken) {
+          neededLines = Math.ceil((matrixToken.cells.length * 36) / BASE_LINE_HEIGHT) + 1;
+        } else if (hasFraction || hasBoxed) {
+          neededLines = 2;
+        } else {
+          neededLines = 1;
+        }
+      } else if (block.type === 'boxed-final') {
+        const matrixToken = block.tokens.find((t) => t.type === 'matrix' || (t.type === 'boxed' && t.content.some((it) => it.type === 'matrix'))) as MathMatrix | undefined;
         if (matrixToken) {
           neededLines = Math.ceil((matrixToken.cells.length * 36) / BASE_LINE_HEIGHT) + 1;
         } else {
-          neededLines = hasFraction ? 2 : 1;
+          neededLines = 2;
         }
       } else if (block.type === 'table') {
         const rowCount = block.tableData ? 1 + block.tableData.rows.length : 5;
@@ -144,6 +156,16 @@ export class PageEngine {
         neededLines = Math.max(1, Math.ceil(textLen / 70));
       }
 
+      // Check if block introduces or references a question number
+      const qMatches = (block.rawText || '').matchAll(/(?:[Qq]uestion|[Pp]roblem|Q)\s*(\d+)/gi);
+      for (const m of qMatches) {
+        activeQuestionNum = parseInt(m[1], 10);
+      }
+      const numPrefixMatch = (block.rawText || '').match(/^\(?(\d+)\)?[\.:\)]/);
+      if (numPrefixMatch) {
+        activeQuestionNum = parseInt(numPrefixMatch[1], 10);
+      }
+
       // Orphan protection: If a heading or margin-item question label would sit alone on the last lines, push it
       const isHeaderOrQuestion = block.type === 'heading' || block.type === 'margin-item';
       const isOrphan = isHeaderOrQuestion && (currentLineCount + neededLines >= maxLinesPerPage - 1);
@@ -153,9 +175,20 @@ export class PageEngine {
       const isWidowFinal = isBoxedFinal && (currentLineCount + neededLines > maxLinesPerPage - 1);
 
       if ((currentLineCount + neededLines > maxLinesPerPage || isOrphan || isWidowFinal) && currentPageBlocks.length > 0) {
+        const qNums = new Set<number>();
+        if (activeQuestionNum !== undefined) qNums.add(activeQuestionNum);
+        for (const b of currentPageBlocks) {
+          const text = b.rawText || '';
+          const matches = text.matchAll(/(?:[Qq]uestion|[Pp]roblem|Q)\s*(\d+)/gi);
+          for (const m of matches) qNums.add(parseInt(m[1], 10));
+          const pMatch = text.match(/^\(?(\d+)\)?[\.:\)]/);
+          if (pMatch) qNums.add(parseInt(pMatch[1], 10));
+        }
+
         pages.push({
           pageNumber: pages.length + 1,
           blocks: currentPageBlocks,
+          questionNums: Array.from(qNums),
         });
         currentPageBlocks = [block];
         currentLineCount = neededLines;
@@ -166,9 +199,20 @@ export class PageEngine {
     }
 
     if (currentPageBlocks.length > 0 || pages.length === 0) {
+      const qNums = new Set<number>();
+      if (activeQuestionNum !== undefined) qNums.add(activeQuestionNum);
+      for (const b of currentPageBlocks) {
+        const text = b.rawText || '';
+        const matches = text.matchAll(/(?:[Qq]uestion|[Pp]roblem|Q)\s*(\d+)/gi);
+        for (const m of matches) qNums.add(parseInt(m[1], 10));
+        const pMatch = text.match(/^\(?(\d+)\)?[\.:\)]/);
+        if (pMatch) qNums.add(parseInt(pMatch[1], 10));
+      }
+
       pages.push({
         pageNumber: pages.length + 1,
         blocks: currentPageBlocks,
+        questionNums: Array.from(qNums),
       });
     }
 
@@ -292,45 +336,170 @@ export class PageEngine {
         3
       );
 
-      const scratchLines = paper.customRoughWork && paper.customRoughWork.length > 0
+      // Extract question numbers present on this page (including carry-over from pageData.questionNums)
+      const pageQuestionNums = new Set<number>(pageData.questionNums || []);
+      for (const b of pageData.blocks) {
+        const text = b.rawText || '';
+        const matches = text.matchAll(/(?:[Qq]uestion|[Pp]roblem|Q)\s*(\d+)/gi);
+        for (const m of matches) {
+          pageQuestionNums.add(parseInt(m[1], 10));
+        }
+        const numPrefixMatch = text.match(/^\(?(\d+)\)?[\.:\)]/);
+        if (numPrefixMatch) {
+          pageQuestionNums.add(parseInt(numPrefixMatch[1], 10));
+        }
+      }
+
+      // Check for subparts on this page: e.g. "(ii)", "(iii)", "(a)", "(b)"
+      const pageSubparts = new Set<string>();
+      for (const b of pageData.blocks) {
+        const text = b.rawText || '';
+        const subMatches = text.matchAll(/(?:^|\s|\#|\()([ivxlcdm]+|[a-e])(?:\)|\.|\:)/gi);
+        for (const sm of subMatches) {
+          pageSubparts.add(sm[1].toLowerCase());
+        }
+      }
+
+      const allScratch = paper.customRoughWork && paper.customRoughWork.length > 0
         ? paper.customRoughWork
-        : ['14 * 6 = 84', '84 - 23 = 61', '√61 ≈ 7.81'];
+        : ['14 · 6 = 84', '84 - 23 = 61', '√61 ≈ 7.81'];
 
-      let scratchY = TOP_MARGIN + BASE_LINE_HEIGHT * 2.5;
+      // Parse structured scratch items and assign to questions
+      const parsedItems = allScratch.map((raw, idx) => {
+        const labelMatch = raw.match(/\[(.*?)\]/);
+        const label = labelMatch ? labelMatch[1] : '';
+        const qMatch = (label + ' ' + raw).match(/(?:[Qq]uestion|[Pp]roblem|Q)\s*(\d+)/i);
+        const qNum = qMatch ? parseInt(qMatch[1], 10) : undefined;
+        const subMatch = (label + ' ' + raw).match(/\(([ivxlcdm]+|[a-e])\)/i);
+        const subpart = subMatch ? subMatch[1].toLowerCase() : undefined;
+        let mathStr = raw.replace(/\[.*?\]/g, '').trim();
 
-      scratchLines.forEach((line, sIdx) => {
-        if (scratchY > PAGE_HEIGHT - BOTTOM_MARGIN - 40) return;
+        // Normalize math expressions into clean student handwriting glyphs
+        mathStr = mathStr
+          .replace(/\^2/g, '²')
+          .replace(/\^3/g, '³')
+          .replace(/\^4/g, '⁴')
+          .replace(/\*/g, ' · ')
+          .replace(/sqrt\(/gi, '√(')
+          .replace(/\bpi\b/gi, 'π')
+          .replace(/\\omega/g, 'ω');
 
-        // Small scratch font size (11 - 13px)
-        const scratchW = this.renderWordOrChars(
-          textCtx,
-          font,
-          line,
-          rX + 14 + (this.noise.random() - 0.5) * 4,
-          scratchY,
-          12.5,
-          bodyInkColor,
-          0.2 + (sIdx * 0.1),
-          { ...handwriting, slantAngle: (handwriting.slantAngle ?? 0) + 3 },
-          textRoughCanvas
-        );
+        return {
+          raw,
+          label,
+          qNum,
+          subpart,
+          mathStr,
+          origIdx: idx,
+        };
+      });
 
-        // 45% probability of a casual strike-through line (student crossed out scratch math)
-        if (this.noise.random() < 0.45) {
-          this.mathRenderer.drawHandLine(
+      // Filter items that belong on this page:
+      // 1. If an item has both qNum and subpart (e.g. Q10(ii)):
+      //    Must match qNum AND, if subparts exist on page, prioritize page containing subpart!
+      // 2. If an item matches qNum: include it if subpart is not specified or page has subpart
+      // 3. Otherwise distribute across pages based on origIdx
+      const pageItems = parsedItems.filter((item) => {
+        if (item.qNum !== undefined) {
+          if (!pageQuestionNums.has(item.qNum)) return false;
+          if (item.subpart) {
+            return pageSubparts.has(item.subpart);
+          }
+          return true;
+        }
+        return (item.origIdx % Math.max(1, (paper.customRoughWork?.length || 1))) === (pageData.pageNumber - 1);
+      });
+
+      // If no question matches and it's page 1, show first 2-3 items as default scratch
+      const itemsToRender = pageItems.length > 0
+        ? pageItems
+        : (pageData.pageNumber === 1 && !parsedItems.some((it) => it.qNum !== undefined))
+        ? parsedItems.slice(0, 3)
+        : [];
+
+      let scratchY = TOP_MARGIN + BASE_LINE_HEIGHT * 2.2;
+
+      itemsToRender.forEach((item, itemIdx) => {
+        if (scratchY > PAGE_HEIGHT - BOTTOM_MARGIN - 30) return;
+
+        // Render small label if present (e.g. "Q6 check:")
+        if (item.label) {
+          const shortLabel = item.label.replace(/^Check\s+/i, '').replace(/factoring|denominator|scalar constant|transform|limits/gi, '').trim();
+          const displayLabel = item.qNum ? `Q${item.qNum} check:` : `(${shortLabel || item.label})`;
+          this.renderWordOrChars(
             textCtx,
-            rX + 10,
-            scratchY + 2,
-            rX + 14 + scratchW + 4,
-            scratchY - 10,
-            1.2,
-            bodyInkColor,
-            1.4,
-            2
+            font,
+            displayLabel,
+            rX + 14,
+            scratchY,
+            10.5,
+            '#64748b',
+            0.1,
+            { ...handwriting, handFatigue: 0.1 },
+            textRoughCanvas
           );
+          scratchY += 15;
         }
 
-        scratchY += BASE_LINE_HEIGHT * 1.8;
+        // Split long equations at '=' or logical steps so they fit the 125px column width
+        const rawSegments = item.mathStr.split(/\s*=\s*/);
+        const wrappedLines: string[] = [];
+        rawSegments.forEach((seg, sIdx) => {
+          const prefix = sIdx > 0 ? '= ' : '';
+          const fullSeg = prefix + seg.trim();
+          if (fullSeg.length <= 18) {
+            wrappedLines.push(fullSeg);
+          } else {
+            // Further split if segment is still too long: split on operators while keeping terms intact
+            const parts = fullSeg.split(/(\s*[\+\-·*]\s*|\s+)/).filter(Boolean);
+            let cur = '';
+            for (const p of parts) {
+              if ((cur + p).trim().length <= 18) {
+                cur += p;
+              } else {
+                if (cur.trim()) wrappedLines.push(cur.trim());
+                cur = p;
+              }
+            }
+            if (cur.trim()) wrappedLines.push(cur.trim());
+          }
+        });
+
+        wrappedLines.forEach((lineText, lIdx) => {
+          if (scratchY > PAGE_HEIGHT - BOTTOM_MARGIN - 20) return;
+          const scratchW = this.renderWordOrChars(
+            textCtx,
+            font,
+            lineText,
+            rX + 14 + (this.noise.random() - 0.5) * 3,
+            scratchY,
+            11.5,
+            bodyInkColor,
+            0.2 + (lIdx * 0.05),
+            { ...handwriting, slantAngle: (handwriting.slantAngle ?? 0) + 2.5 },
+            textRoughCanvas
+          );
+
+          // Subtle casual cross-out on an intermediate line
+          if (lIdx === 0 && itemIdx === 0 && this.noise.random() < 0.28) {
+            this.mathRenderer.drawHandLine(
+              textCtx,
+              rX + 10,
+              scratchY + 1,
+              rX + 14 + Math.min(115, scratchW + 4),
+              scratchY - 8,
+              1.1,
+              bodyInkColor,
+              1.2,
+              2
+            );
+          }
+
+          scratchY += 17;
+        });
+
+        // Small separator gap between items
+        scratchY += 12;
       });
     }
 
@@ -395,6 +564,15 @@ export class PageEngine {
       const rawMarginX =
         LEFT_MARGIN + wander + block.indent * 28 + (block.type === 'math-step' ? derivationDriftX + equationIndent : 0);
       const baseMarginX = Math.max(145, rawMarginX);
+
+      // Top clearance: If the block contains tall elements (boxed answers, fractions, roots, cases),
+      // push baseline down so the top of this block never collides with the line above.
+      const blockSpan = this.getTokensVerticalSpan(block.tokens, effectiveFontSize);
+      const hasBoxedToken = block.type === 'boxed-final' || block.tokens.some((t) => t.type === 'boxed');
+      const minRequiredAscent = hasBoxedToken ? BASE_LINE_HEIGHT * 0.55 : BASE_LINE_HEIGHT * 0.70;
+      if (bIdx > 0 && blockSpan.ascent > minRequiredAscent) {
+        currentY += Math.round(blockSpan.ascent - minRequiredAscent + (hasBoxedToken ? 10 : 0));
+      }
 
       if (block.type === 'heading') {
         // Headings in Red/Black gel pen with single or double hand-sketched underline
@@ -643,10 +821,12 @@ export class PageEngine {
           textRoughCanvas
         );
 
-        // Non-uniform vertical line spacing between algebra steps (with comfortable clearance for matrices/cases)
-        const hasMatrix = block.tokens.some((t) => t.type === 'matrix');
-        const stepSpacingMult = hasMatrix ? (1.18 + this.noise.random() * 0.08) : (0.94 + this.noise.random() * 0.16);
-        currentY += seqResult.height * stepSpacingMult;
+        // Non-uniform vertical line spacing between algebra steps (with comfortable clearance for matrices/cases/boxed)
+        const hasMatrix = block.tokens.some((t) => t.type === 'matrix' || (t.type === 'boxed' && t.content.some((it) => it.type === 'matrix')));
+        const hasBoxed = block.tokens.some((t) => t.type === 'boxed');
+        const minStepHeight = blockSpan.ascent + blockSpan.descent + (hasBoxed ? 16 : 8);
+        const stepSpacingMult = hasMatrix ? (1.18 + this.noise.random() * 0.08) : hasBoxed ? (1.12 + this.noise.random() * 0.08) : (0.94 + this.noise.random() * 0.16);
+        currentY += Math.max(seqResult.height, minStepHeight) * stepSpacingMult;
       } else if (block.type === 'boxed-final') {
         // Boxed final answer block
         const advanceY = this.renderBoxedAnswerBlock(
@@ -736,11 +916,16 @@ export class PageEngine {
 
   private getTokenVerticalSpan(token: MathToken, fontSize: number): { ascent: number; descent: number } {
     if (token.type === 'fraction') {
-      const numSpan = this.getTokensVerticalSpan(token.numerator, fontSize * 0.86);
-      const denSpan = this.getTokensVerticalSpan(token.denominator, fontSize * 0.86);
+      const fracFontSize = fontSize * 0.84;
+      const numSpan = this.getTokensVerticalSpan(token.numerator, fracFontSize);
+      const denSpan = this.getTokensVerticalSpan(token.denominator, fracFontSize);
+      const barTopClearance = Math.max(7.5, fracFontSize * 0.30);
+      const barBottomClearance = Math.max(7.5, fracFontSize * 0.30);
+      const numDescent = Math.max(0, numSpan.descent);
+      const denAscent = Math.max(fracFontSize * 0.70, denSpan.ascent);
       return {
-        ascent: fontSize * 0.35 + 8 + numSpan.ascent + numSpan.descent,
-        descent: denSpan.ascent + denSpan.descent + 10,
+        ascent: fontSize * 0.34 + numDescent + barTopClearance + numSpan.ascent + 2,
+        descent: denAscent + barBottomClearance + denSpan.descent - fontSize * 0.34 + 4,
       };
     }
     if (token.type === 'matrix') {
@@ -771,6 +956,20 @@ export class PageEngine {
       return {
         ascent: token.sup ? fontSize * 0.95 : fontSize * 0.75,
         descent: token.sub ? fontSize * 0.45 : fontSize * 0.20,
+      };
+    }
+    if (token.type === 'root') {
+      const radSpan = this.getTokensVerticalSpan(token.content, fontSize);
+      return {
+        ascent: radSpan.ascent + 8,
+        descent: radSpan.descent + 4,
+      };
+    }
+    if (token.type === 'boxed') {
+      const innerSpan = this.getTokensVerticalSpan(token.content, fontSize);
+      return {
+        ascent: innerSpan.ascent + 12,
+        descent: innerSpan.descent + 12,
       };
     }
     return { ascent: fontSize * 0.75, descent: fontSize * 0.22 };
@@ -1066,6 +1265,9 @@ export class PageEngine {
         currentLineMaxHeight = Math.max(currentLineMaxHeight, BASE_LINE_HEIGHT * 1.55);
       } else if (token.type === 'matrix') {
         currentLineMaxHeight = Math.max(currentLineMaxHeight, token.cells.length * fontSize * 1.5);
+      } else if (token.type === 'boxed') {
+        const span = this.getTokenVerticalSpan(token, fontSize);
+        currentLineMaxHeight = Math.max(currentLineMaxHeight, span.ascent + span.descent + 20);
       }
     }
 
@@ -1249,8 +1451,8 @@ export class PageEngine {
     inkColor: string,
     isBig = false
   ): number {
-    const topY = isBig ? y - fontSize * 1.15 : y - fontSize * 0.72;
-    const bottomY = isBig ? y + fontSize * 0.55 : y + fontSize * 0.24;
+    const topY = isBig ? y - fontSize * 1.42 : y - fontSize * 0.72;
+    const bottomY = isBig ? y + fontSize * 0.82 : y + fontSize * 0.24;
 
     if (char === '(' || char === ')') {
       return this.mathRenderer.drawParenthesis(ctx, x, topY, bottomY, char === '(', inkColor, fontSize);
@@ -1330,6 +1532,14 @@ export class PageEngine {
     if (symbol === '∃' || symbol === '\\exists') return this.mathRenderer.drawExists(ctx, x, y, fontSize, inkColor);
     if (symbol === '∪' || symbol === '\\cup') return this.mathRenderer.drawCup(ctx, x, y, fontSize, inkColor);
     if (symbol === '∩' || symbol === '\\cap') return this.mathRenderer.drawCap(ctx, x, y, fontSize, inkColor);
+    if (symbol === '∼' || symbol === '~' || symbol === '\\sim') return this.mathRenderer.drawSim(ctx, x, y, fontSize, inkColor);
+    if (symbol === 'Γ' || symbol === '\\Gamma') return this.mathRenderer.drawGamma(ctx, x, y, fontSize, inkColor);
+    if (symbol === '/') {
+      const scale = fontSize / 28;
+      const w = 10 * scale;
+      this.mathRenderer.drawHandLine(ctx, x + 2, y + 2 * scale, x + w - 1, y - fontSize * 0.72, 1.4, inkColor, 1.2, 2);
+      return w + 3 * scale;
+    }
 
     // Default symbol draw as text safely
     return this.renderWordOrChars(ctx, font, symbol, x, y, fontSize, inkColor, lineProgress, handwriting, roughCanvas);
@@ -1352,77 +1562,43 @@ export class PageEngine {
     roughCanvas: ReturnType<typeof rough.canvas>,
     wristState?: WristClusterState
   ): number {
-    // Section 2C: Contextual Diagonal Slash Fraction ($^1/_2$)
-    // In human student derivations, simple scalar coefficients like 1/2 or 1/3 are frequently
-    // written as compact diagonal slashes rather than formal two-story stacked fraction bars.
-    const isSingleNumeric = (toks: MathToken[]): string | null => {
-      if (toks.length === 1 && toks[0].type === 'text' && /^[0-9]$/.test(toks[0].text.trim())) {
-        return toks[0].text.trim();
-      }
-      return null;
-    };
-
-    const numDigit = isSingleNumeric(numerator);
-    const denDigit = isSingleNumeric(denominator);
-
-    if (numDigit && denDigit && this.noise.random() < 0.40) {
-      const slashScale = fontSize / 28;
-      const fracFontSize = fontSize * 0.78;
-      const numW = this.measureWord(font, numDigit, fracFontSize);
-
-      // 1. Numerator placed slightly raised above the baseline
-      const numY = y - fontSize * 0.36 + (this.noise.random() - 0.5) * 1.5;
-      this.renderWordOrChars(ctx, font, numDigit, x, numY, fracFontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
-
-      // 2. Dynamic diagonal slash downstroke (top-right to bottom-left with organic tremor)
-      const slashX = x + numW + 2 * slashScale;
-      const slashTopY = y - fontSize * 0.65;
-      const slashBottomY = y + fontSize * 0.15;
-      const slashSpanW = 7 * slashScale;
-      const stemW = this.mathRenderer.getBaseLineWidth(slashScale, 0.95);
-
-      ctx.save();
-      ctx.strokeStyle = inkColor;
-      ctx.lineWidth = stemW;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(slashX + slashSpanW + (this.noise.random() - 0.5) * 1.2, slashTopY + (this.noise.random() - 0.5) * 1.5);
-      ctx.lineTo(slashX + (this.noise.random() - 0.5) * 1.2, slashBottomY + (this.noise.random() - 0.5) * 1.5);
-      ctx.stroke();
-      ctx.restore();
-
-      // 3. Denominator placed slightly lowered below the baseline
-      const denX = slashX + slashSpanW + 2 * slashScale;
-      const denY = y + fontSize * 0.12 + (this.noise.random() - 0.5) * 1.5;
-      const denW = this.renderWordOrChars(ctx, font, denDigit, denX, denY, fracFontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
-
-      return (denX + denW - x) + 6 * slashScale;
-    }
-
-    const fracFontSize = fontSize * 0.86;
+    const fracFontSize = fontSize * 0.84;
 
     // Measure actual widths using estimateTokensWidth
     const numWidth = this.estimateTokensWidth(font, numerator, fracFontSize);
     const denWidth = this.estimateTokensWidth(font, denominator, fracFontSize);
     const contentMaxW = Math.max(numWidth, denWidth);
-    const barWidth = contentMaxW + 16;
 
-    this.currentLineObstacles.push({ x1: x - 4, x2: x + barWidth + 8 });
+    // Clean, authentic horizontal bar overhang on both left and right sides
+    const barPadding = Math.max(7, fracFontSize * 0.28);
+    const totalBarWidth = contentMaxW + barPadding * 2;
 
-    // Subtle human left-of-center bias without ever overflowing barWidth
-    const numFree = Math.max(0, barWidth - numWidth);
-    const denFree = Math.max(0, barWidth - denWidth);
-    const numX = x + numFree * (0.35 + this.noise.random() * 0.25);
-    const denX = x + denFree * (0.32 + this.noise.random() * 0.28);
+    this.currentLineObstacles.push({ x1: x - 2, x2: x + totalBarWidth + 6 });
 
-    const barY = y - fontSize * 0.34 + (this.noise.random() - 0.5) * 1.5;
+    // Center numerator and denominator over/under the fraction content area
+    // with subtle organic student tremor (+-1.2px)
+    const numJitter = (this.noise.random() - 0.5) * 2.4;
+    const denJitter = (this.noise.random() - 0.5) * 2.4;
+    const numX = x + barPadding + Math.max(0, (contentMaxW - numWidth) * 0.5) + numJitter;
+    const denX = x + barPadding + Math.max(0, (contentMaxW - denWidth) * 0.5) + denJitter;
 
-    // Account for deep descendants in numerator or tall ascenders in denominator
+    // Fraction bar placed at math axis (center of operators like =, +, -)
+    const barY = y - fontSize * 0.34 + (this.noise.random() - 0.5) * 1.2;
+
+    // Optical vertical clearances:
+    // Guarantee clean daylight between fraction bar and numerator/denominator ink
     const numSpan = this.getTokensVerticalSpan(numerator, fracFontSize);
     const denSpan = this.getTokensVerticalSpan(denominator, fracFontSize);
 
-    const numY = barY - Math.max(6, numSpan.descent + 3);
-    const denY = barY + Math.max(fracFontSize * 0.88, denSpan.ascent + 4);
+    const numDescent = Math.max(0, numSpan.descent);
+    const denAscent = Math.max(fracFontSize * 0.70, denSpan.ascent);
+
+    // Minimum clear daylight gap from fraction bar edge to nearest glyph ink
+    const barTopClearance = Math.max(7.5, fracFontSize * 0.30);
+    const barBottomClearance = Math.max(7.5, fracFontSize * 0.30);
+
+    const numY = barY - numDescent - barTopClearance;
+    const denY = barY + denAscent + barBottomClearance;
 
     let cx = numX;
     for (const t of numerator) {
@@ -1430,7 +1606,8 @@ export class PageEngine {
     }
     const actualNumRight = cx - x;
 
-    this.mathRenderer.drawFractionBar(ctx, roughCanvas, x, barY, Math.max(barWidth, actualNumRight), fontSize, inkColor);
+    const actualBarWidth = Math.max(totalBarWidth, actualNumRight + barPadding * 0.5);
+    this.mathRenderer.drawFractionBar(ctx, roughCanvas, x, barY, actualBarWidth, fontSize, inkColor);
 
     cx = denX;
     for (const t of denominator) {
@@ -1438,8 +1615,8 @@ export class PageEngine {
     }
     const actualDenRight = cx - x;
 
-    // Always advance past the furthest drawn pixel so the next token NEVER overlaps!
-    return Math.max(barWidth, actualNumRight, actualDenRight) + 10;
+    // Always advance past the furthest drawn pixel so subsequent tokens NEVER collide!
+    return Math.max(actualBarWidth, actualNumRight, actualDenRight) + 8;
   }
 
   /**
@@ -1496,6 +1673,23 @@ export class PageEngine {
     const startScriptX = currX;
     let maxScriptAdvance = 0;
 
+    // Special case for \hat accent: circumflex is centered horizontally right above the base glyph!
+    const isHatAccent = sup && sup.length === 1 && sup[0].type === 'operator' && sup[0].symbol === '^';
+    if (isHatAccent) {
+      const centerX = x + baseWidth * 0.5;
+      const topY = y - fontSize * 0.72;
+      this.mathRenderer.drawHatAccent(ctx, centerX, topY, fontSize, inkColor);
+      if (sub && sub.length > 0) {
+        const subY = y + fontSize * 0.22 + (this.noise.random() - 0.5) * 1.5;
+        let sx = currX;
+        for (const t of sub) {
+          sx += this.renderSingleToken(ctx, font, t, sx, subY, scriptFontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
+        }
+        return sx - x;
+      }
+      return baseWidth;
+    }
+
     const isDelimiterScript = typeof base === 'string' && base === '';
 
     // Special case for \lim: subscript is centered directly underneath 'lim'
@@ -1511,7 +1705,7 @@ export class PageEngine {
     } else {
       // Standard subscript (or bottom evaluation limit for delimiters)
       if (sub && sub.length > 0) {
-        const subOffset = isDelimiterScript ? fontSize * 0.38 : fontSize * 0.22;
+        const subOffset = isDelimiterScript ? fontSize * 0.70 : fontSize * 0.22;
         const subY = y + subOffset + (this.noise.random() - 0.5) * 1.5;
         let sx = startScriptX;
         for (const t of sub) {
@@ -1523,7 +1717,7 @@ export class PageEngine {
 
     // Superscript (or top evaluation limit for delimiters)
     if (sup && sup.length > 0) {
-      const supOffset = isDelimiterScript ? fontSize * 0.78 : fontSize * 0.44;
+      const supOffset = isDelimiterScript ? fontSize * 1.30 : fontSize * 0.44;
       const supY = y - supOffset + (this.noise.random() - 0.5) * 1.5;
       let sx = startScriptX;
       for (const t of sup) {
@@ -1556,29 +1750,29 @@ export class PageEngine {
     if (isInt) {
       const intWidth = this.mathRenderer.drawIntegral(ctx, x, y, fontSize, inkColor);
 
-      // Lower limit at bottom-right of lower hook
+      // Lower limit placed comfortably at bottom-right of lower hook
       let lowerAdvance = 0;
       if (token.lower && token.lower.length > 0) {
-        const lowerY = y + fontSize * 0.36;
-        let lx = x + intWidth * 0.65;
+        const lowerY = y + fontSize * 0.40 + (this.noise.random() - 0.5) * 1.5;
+        let lx = x + intWidth * 0.48 + (this.noise.random() - 0.5) * 1.5;
         for (const t of token.lower) {
           lx += this.renderSingleToken(ctx, font, t, lx, lowerY, limitFontSize, inkColor, lineProgress, handwriting, roughCanvas);
         }
         lowerAdvance = lx - x;
       }
 
-      // Upper limit at top-right of upper hook
+      // Upper limit placed comfortably at top-right of upper hook
       let upperAdvance = 0;
       if (token.upper && token.upper.length > 0) {
-        const upperY = y - fontSize * 0.78;
-        let ux = x + intWidth * 0.95;
+        const upperY = y - fontSize * 0.98 + (this.noise.random() - 0.5) * 1.5;
+        let ux = x + intWidth * 0.72 + (this.noise.random() - 0.5) * 1.5;
         for (const t of token.upper) {
           ux += this.renderSingleToken(ctx, font, t, ux, upperY, limitFontSize, inkColor, lineProgress, handwriting, roughCanvas);
         }
         upperAdvance = ux - x;
       }
 
-      return Math.max(intWidth + 4, lowerAdvance + 4, upperAdvance + 4);
+      return Math.max(intWidth + 6, lowerAdvance + 6, upperAdvance + 6);
     } else {
       // \sum or \prod
       const opWidth =
@@ -1773,16 +1967,19 @@ export class PageEngine {
     handwriting: AppState['handwriting'],
     roughCanvas: ReturnType<typeof rough.canvas>
   ): number {
+    const span = this.getTokensVerticalSpan(content, fontSize);
     const contentWidth = this.estimateTokensWidth(font, content, fontSize);
+    const contentHeight = span.ascent + span.descent;
     const { innerX, totalWidth } = this.mathRenderer.drawSquareRoot(
       ctx,
       roughCanvas,
       x,
       y,
       contentWidth,
-      fontSize * 1.1,
+      contentHeight,
       fontSize,
-      inkColor
+      inkColor,
+      span.descent
     );
 
     let cx = innerX;
@@ -1808,12 +2005,22 @@ export class PageEngine {
     handwriting: AppState['handwriting'],
     roughCanvas: ReturnType<typeof rough.canvas>
   ): number {
-    const contentWidth = this.estimateTokensWidth(font, content, fontSize);
+    const span = this.getTokensVerticalSpan(content, fontSize);
+    const padX = 14;
+    const padTop = 10;
+    const padBottom = 10;
 
-    let cx = x + 10;
+    let cx = x + padX;
     for (const t of content) {
       cx += this.renderSingleToken(ctx, font, t, cx, y, fontSize, inkColor, lineProgress, handwriting, roughCanvas);
     }
+
+    const renderedWidth = cx - (x + padX);
+    const estWidth = this.estimateTokensWidth(font, content, fontSize);
+    const contentWidth = Math.max(renderedWidth, estWidth);
+    const totalBoxWidth = contentWidth + padX * 2;
+    const boxTopY = y - span.ascent - padTop;
+    const boxHeight = span.ascent + span.descent + padTop + padBottom;
 
     if (
       this.mainPageCtx &&
@@ -1825,10 +2032,10 @@ export class PageEngine {
     ) {
       this.inkAndScan.drawHighlighterStroke(
         this.mainPageCtx,
-        x,
-        y - fontSize * 0.75,
-        contentWidth + 18,
-        fontSize * 1.15,
+        x - 2,
+        boxTopY + 2,
+        totalBoxWidth + 4,
+        boxHeight - 4,
         this.currentPaper.highlighterMode
       );
     }
@@ -1839,15 +2046,15 @@ export class PageEngine {
       font,
       this.mutator,
       x,
-      y - fontSize * 0.75,
-      contentWidth + 18,
-      fontSize * 1.15,
+      boxTopY,
+      totalBoxWidth,
+      boxHeight,
       fontSize,
       inkColor,
       handwriting
     );
 
-    return contentWidth + 28;
+    return totalBoxWidth + 14;
   }
 
   /**
@@ -1868,11 +2075,12 @@ export class PageEngine {
     const isSingleBoxedToken = tokens.length === 1 && tokens[0].type === 'boxed';
 
     if (isSingleBoxedToken) {
-      // renderBoxedExpr handles both tokens and surrounding box/bubble
-      this.renderTokenSequence(
+      const boxedToken = tokens[0] as MathBoxed;
+      const span = this.getTokensVerticalSpan(boxedToken.content, fontSize);
+      this.renderBoxedExpr(
         ctx,
         font,
-        tokens,
+        boxedToken.content,
         startX + 12,
         y,
         fontSize,
@@ -1881,15 +2089,21 @@ export class PageEngine {
         handwriting,
         roughCanvas
       );
-      return BASE_LINE_HEIGHT * 1.6;
+      const totalHeight = span.ascent + span.descent + 20;
+      return Math.max(BASE_LINE_HEIGHT * 1.8, totalHeight + BASE_LINE_HEIGHT * 0.6);
     }
 
     // Otherwise render sequence and wrap entire answer block in box/oval/underline
+    const span = this.getTokensVerticalSpan(tokens, fontSize);
+    const padX = 18;
+    const padTop = 12;
+    const padBottom = 12;
+
     const seqResult = this.renderTokenSequence(
       ctx,
       font,
       tokens,
-      startX + 14,
+      startX + padX,
       y,
       fontSize,
       inkColor,
@@ -1897,6 +2111,11 @@ export class PageEngine {
       handwriting,
       roughCanvas
     );
+
+    const estWidth = this.estimateTokensWidth(font, tokens, fontSize);
+    const totalBoxWidth = Math.max(seqResult.width, estWidth) + padX * 2 + 10;
+    const boxTopY = y - span.ascent - padTop;
+    const boxHeight = Math.max(span.ascent + span.descent + padTop + padBottom, seqResult.height + 14);
 
     if (
       this.mainPageCtx &&
@@ -1908,10 +2127,10 @@ export class PageEngine {
     ) {
       this.inkAndScan.drawHighlighterStroke(
         this.mainPageCtx,
-        startX + 4,
-        y - fontSize * 0.75,
-        seqResult.width + 16,
-        fontSize * 1.15,
+        startX - 2,
+        boxTopY + 2,
+        totalBoxWidth + 4,
+        boxHeight - 4,
         this.currentPaper.highlighterMode
       );
     }
@@ -1921,16 +2140,16 @@ export class PageEngine {
       roughCanvas,
       font,
       this.mutator,
-      startX + 4,
-      y - fontSize * 0.75,
-      seqResult.width + 16,
-      fontSize * 1.15,
+      startX,
+      boxTopY,
+      totalBoxWidth,
+      boxHeight,
       fontSize,
       inkColor,
       handwriting
     );
 
-    return Math.max(BASE_LINE_HEIGHT * 1.6, seqResult.height + 14);
+    return Math.max(BASE_LINE_HEIGHT * 1.8, boxHeight + BASE_LINE_HEIGHT * 0.6);
   }
 
   /**

@@ -38,6 +38,7 @@ export function measureFontStemWidth(font: opentype.Font, fontSize: number): num
 export class MathRenderer {
   private noise: SeededNoise;
   private calibratedLineWidth = 2.4;
+  private allographHistory: Map<string, number> = new Map();
 
   constructor(noise: SeededNoise) {
     this.noise = noise;
@@ -52,8 +53,25 @@ export class MathRenderer {
   }
 
   /**
+   * Biometric anti-duplication selector: ensures consecutive occurrences of the same math symbol
+   * always cycle through different human allographs rather than looking cloned.
+   */
+  public getNextAllograph(symbolKey: string, totalStyles: number): number {
+    const last = this.allographHistory.get(symbolKey) ?? -1;
+    let roll = Math.floor(this.noise.random() * totalStyles);
+    if (totalStyles > 1 && roll === last) {
+      roll = (roll + 1 + Math.floor(this.noise.random() * (totalStyles - 1))) % totalStyles;
+    }
+    this.allographHistory.set(symbolKey, roll);
+    return roll;
+  }
+
+  /**
    * Procedural Imperfect Equals (=)
-   * Top and bottom bars differ in length by ±15%, vertical gap by ±1.5px, and relative tilt by ±2.5°.
+   * 3 distinct human allographs with dynamic biometric variations:
+   * - Allograph 0: Upper bar slightly longer with gentle upward bow, lower bar shorter with downward sag.
+   * - Allograph 1: Lower bar longer with subtle forward hand slant (+1.5° to +3.5°).
+   * - Allograph 2: Rapid parallel speed slashes with subtle angular divergence and independent start jitter.
    */
   public drawImperfectEquals(
     ctx: CanvasRenderingContext2D,
@@ -63,17 +81,37 @@ export class MathRenderer {
     inkColor: string
   ): number {
     const scale = fontSize / 28;
-    const baseWidth = 14 * scale;
-    const barGap = (5.5 + (this.noise.random() - 0.5) * 2.5) * scale;
-    const lineWidth = this.getBaseLineWidth(scale, 0.95);
+    const style = this.getNextAllograph('equals', 3);
+    const baseWidth = (13 + this.noise.random() * 3.5) * scale;
+    const barGap = (5.2 + (this.noise.random() - 0.5) * 2.2) * scale;
+    const lineWidth = this.getBaseLineWidth(scale, 0.95 + (this.noise.random() - 0.5) * 0.12);
 
-    // Varied lengths
-    const len1 = baseWidth * (0.85 + this.noise.random() * 0.30);
-    const len2 = baseWidth * (0.85 + this.noise.random() * 0.30);
+    let len1 = baseWidth;
+    let len2 = baseWidth;
+    let tilt1 = ((this.noise.random() - 0.5) * 3.5 * Math.PI) / 180;
+    let tilt2 = ((this.noise.random() - 0.5) * 3.5 * Math.PI) / 180;
+    let startOffset1 = 0;
+    let startOffset2 = 0;
 
-    // Tilt variance
-    const tilt1 = ((this.noise.random() - 0.5) * 4.5 * Math.PI) / 180;
-    const tilt2 = ((this.noise.random() - 0.5) * 4.5 * Math.PI) / 180;
+    if (style === 0) {
+      // Top bar longer
+      len1 = baseWidth * (1.05 + this.noise.random() * 0.15);
+      len2 = baseWidth * (0.85 + this.noise.random() * 0.12);
+      startOffset2 = (0.5 + this.noise.random() * 1.5) * scale;
+    } else if (style === 1) {
+      // Bottom bar longer with forward tilt
+      len1 = baseWidth * (0.88 + this.noise.random() * 0.12);
+      len2 = baseWidth * (1.06 + this.noise.random() * 0.16);
+      tilt2 += (1.8 * Math.PI) / 180;
+      startOffset1 = (0.5 + this.noise.random() * 1.2) * scale;
+    } else {
+      // Divergent speed strokes
+      len1 = baseWidth * (0.92 + this.noise.random() * 0.20);
+      len2 = baseWidth * (0.90 + this.noise.random() * 0.22);
+      tilt1 -= (1.2 * Math.PI) / 180;
+      tilt2 += (1.5 * Math.PI) / 180;
+      startOffset2 = (this.noise.random() - 0.5) * 2.0 * scale;
+    }
 
     ctx.save();
     ctx.strokeStyle = inkColor;
@@ -83,30 +121,32 @@ export class MathRenderer {
     const yTop = y - fontSize * 0.35 - barGap * 0.5;
     const yBottom = y - fontSize * 0.35 + barGap * 0.5;
 
-    // Top stroke with organic parabolic bow
     const midBow1 = (this.noise.random() - 0.5) * 1.6 * scale;
     const midBow2 = (this.noise.random() - 0.5) * 1.6 * scale;
 
     ctx.beginPath();
-    ctx.moveTo(x, yTop);
-    ctx.quadraticCurveTo(x + len1 * 0.5, yTop + midBow1, x + Math.cos(tilt1) * len1, yTop + Math.sin(tilt1) * len1);
+    ctx.moveTo(x + startOffset1, yTop);
+    ctx.quadraticCurveTo(
+      x + startOffset1 + len1 * 0.5,
+      yTop + midBow1,
+      x + startOffset1 + Math.cos(tilt1) * len1,
+      yTop + Math.sin(tilt1) * len1
+    );
     ctx.stroke();
 
-    // Bottom stroke with organic bow and independent start jitter
-    const startOffset = (this.noise.random() - 0.5) * 2 * scale;
     ctx.beginPath();
-    ctx.moveTo(x + startOffset, yBottom);
+    ctx.moveTo(x + startOffset2, yBottom);
     ctx.quadraticCurveTo(
-      x + startOffset + len2 * 0.5,
+      x + startOffset2 + len2 * 0.5,
       yBottom + midBow2,
-      x + startOffset + Math.cos(tilt2) * len2,
+      x + startOffset2 + Math.cos(tilt2) * len2,
       yBottom + Math.sin(tilt2) * len2
     );
     ctx.stroke();
 
     ctx.restore();
 
-    return Math.max(len1, len2) + 6 * scale;
+    return Math.max(len1 + startOffset1, len2 + startOffset2) + 6 * scale;
   }
 
   /**
@@ -601,7 +641,10 @@ export class MathRenderer {
 
   /**
    * Procedural Lowercase Greek Alpha (α):
-   * Fluid organic loop with crossed right tail.
+   * 3 human allographs with dynamic biometric variations:
+   * - Allograph 0: Classic fish-tail loop with crossed right tail.
+   * - Allograph 1: Rapid cursive loop with forward slant and decisive exit flick.
+   * - Allograph 2: Compact rounded alpha with high turnaround apex.
    */
   public drawAlpha(
     ctx: CanvasRenderingContext2D,
@@ -611,9 +654,10 @@ export class MathRenderer {
     inkColor: string
   ): number {
     const scale = fontSize / 28;
-    const w = 12.0 * scale;
-    const topY = y - fontSize * 0.40;
-    const bottomY = y;
+    const style = this.getNextAllograph('alpha', 3);
+    const w = (11.0 + this.noise.random() * 3.2) * scale;
+    const topY = y - fontSize * (0.38 + this.noise.random() * 0.06);
+    const bottomY = y + (this.noise.random() - 0.5) * 1.5;
 
     ctx.save();
     ctx.strokeStyle = inkColor;
@@ -622,23 +666,57 @@ export class MathRenderer {
     ctx.lineJoin = 'round';
 
     ctx.beginPath();
-    // Starts top-right tail, sweeps down-left into oval loop, crosses self, and terminates bottom-right
-    ctx.moveTo(x + w * 0.88, topY);
-    ctx.bezierCurveTo(
-      x + w * 0.55, topY + 1 * scale,
-      x + w * 0.12, topY + (bottomY - topY) * 0.4,
-      x + w * 0.12, bottomY - 3 * scale
-    );
-    ctx.bezierCurveTo(
-      x + w * 0.12, bottomY + 1 * scale,
-      x + w * 0.60, bottomY,
-      x + w * 0.70, topY + (bottomY - topY) * 0.5
-    );
-    ctx.bezierCurveTo(
-      x + w * 0.76, topY + (bottomY - topY) * 0.8,
-      x + w * 0.85, bottomY - 1 * scale,
-      x + w * 0.98, bottomY
-    );
+    if (style === 1) {
+      // Rapid cursive loop
+      ctx.moveTo(x + w * 0.92, topY - 1 * scale);
+      ctx.bezierCurveTo(
+        x + w * 0.45, topY - 1.5 * scale,
+        x + w * 0.08, topY + (bottomY - topY) * 0.35,
+        x + w * 0.15, bottomY - 1 * scale
+      );
+      ctx.bezierCurveTo(
+        x + w * 0.20, bottomY + 1 * scale,
+        x + w * 0.65, bottomY,
+        x + w * 0.72, topY + (bottomY - topY) * 0.45
+      );
+      ctx.lineTo(x + w, bottomY + 0.5 * scale);
+    } else if (style === 2) {
+      // Compact rounded alpha
+      ctx.moveTo(x + w * 0.82, topY + 1 * scale);
+      ctx.bezierCurveTo(
+        x + w * 0.40, topY,
+        x + w * 0.10, topY + (bottomY - topY) * 0.4,
+        x + w * 0.10, bottomY - 2 * scale
+      );
+      ctx.bezierCurveTo(
+        x + w * 0.10, bottomY + 1 * scale,
+        x + w * 0.55, bottomY,
+        x + w * 0.68, topY + (bottomY - topY) * 0.5
+      );
+      ctx.bezierCurveTo(
+        x + w * 0.75, topY + (bottomY - topY) * 0.75,
+        x + w * 0.88, bottomY - 0.5 * scale,
+        x + w * 0.95, bottomY
+      );
+    } else {
+      // Classic fish-tail loop
+      ctx.moveTo(x + w * 0.88, topY);
+      ctx.bezierCurveTo(
+        x + w * 0.55, topY + 1 * scale,
+        x + w * 0.12, topY + (bottomY - topY) * 0.4,
+        x + w * 0.12, bottomY - 3 * scale
+      );
+      ctx.bezierCurveTo(
+        x + w * 0.12, bottomY + 1 * scale,
+        x + w * 0.60, bottomY,
+        x + w * 0.70, topY + (bottomY - topY) * 0.5
+      );
+      ctx.bezierCurveTo(
+        x + w * 0.76, topY + (bottomY - topY) * 0.8,
+        x + w * 0.85, bottomY - 1 * scale,
+        x + w * 0.98, bottomY
+      );
+    }
     ctx.stroke();
     ctx.restore();
 
@@ -657,8 +735,9 @@ export class MathRenderer {
     inkColor: string
   ): number {
     const scale = fontSize / 28;
-    const w = 10.5 * scale;
-    const barY = y - fontSize * 0.40;
+    const style = this.getNextAllograph('tau', 2);
+    const w = (10.0 + this.noise.random() * 2.8) * scale;
+    const barY = y - fontSize * (0.38 + this.noise.random() * 0.06);
     const bottomY = y;
 
     ctx.save();
@@ -667,17 +746,25 @@ export class MathRenderer {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    // 1. Horizontal crossbar with subtle student slant
+    // 1. Horizontal crossbar with student slant
+    const barTilt = (this.noise.random() - 0.4) * 1.5 * scale;
     ctx.beginPath();
-    ctx.moveTo(x + 0.5 * scale, barY);
-    ctx.quadraticCurveTo(x + w * 0.5, barY - 1.0 * scale, x + w, barY + 0.5 * scale);
+    ctx.moveTo(x + 0.5 * scale, barY - barTilt);
+    ctx.quadraticCurveTo(x + w * 0.5, barY - 1.0 * scale, x + w, barY + barTilt);
     ctx.stroke();
 
-    // 2. Downward stem with subtle rightward foot hook
+    // 2. Downward stem
     ctx.beginPath();
-    ctx.moveTo(x + w * 0.45, barY);
-    ctx.lineTo(x + w * 0.45, bottomY - 3.5 * scale);
-    ctx.quadraticCurveTo(x + w * 0.48, bottomY, x + w * 0.82, bottomY - 0.5 * scale);
+    if (style === 1) {
+      // Rapid slanted stem with kick
+      ctx.moveTo(x + w * 0.48, barY);
+      ctx.lineTo(x + w * 0.42, bottomY - 2 * scale);
+      ctx.quadraticCurveTo(x + w * 0.46, bottomY, x + w * 0.86, bottomY - 1.0 * scale);
+    } else {
+      ctx.moveTo(x + w * 0.45, barY);
+      ctx.lineTo(x + w * 0.45, bottomY - 3.5 * scale);
+      ctx.quadraticCurveTo(x + w * 0.48, bottomY, x + w * 0.82, bottomY - 0.5 * scale);
+    }
     ctx.stroke();
 
     ctx.restore();
@@ -696,7 +783,7 @@ export class MathRenderer {
     inkColor: string
   ): number {
     const scale = fontSize / 28;
-    const w = 11.0 * scale;
+    const w = (10.5 + this.noise.random() * 2.5) * scale;
     const topY = y - fontSize * 0.42;
     const bottomY = y - fontSize * 0.04;
     const midY = (topY + bottomY) / 2;
@@ -725,7 +812,7 @@ export class MathRenderer {
     // 2. Central crossbar
     ctx.beginPath();
     ctx.moveTo(x + w * 0.12, midY);
-    ctx.lineTo(x + w * 0.78, midY + (this.noise.random() - 0.5) * 0.6 * scale);
+    ctx.lineTo(x + w * 0.78, midY + (this.noise.random() - 0.5) * 0.8 * scale);
     ctx.stroke();
 
     ctx.restore();
@@ -744,8 +831,9 @@ export class MathRenderer {
     inkColor: string
   ): number {
     const scale = fontSize / 28;
-    const w = 11.5 * scale;
-    const topY = y - fontSize * 0.68;
+    const style = this.getNextAllograph('theta', 2);
+    const w = (10.8 + this.noise.random() * 3.0) * scale;
+    const topY = y - fontSize * (0.66 + this.noise.random() * 0.06);
     const bottomY = y;
     const centerY = (topY + bottomY) / 2;
     const leftX = x + 1.2 * scale;
@@ -759,7 +847,8 @@ export class MathRenderer {
 
     // Upright organic oval with subtle tilt
     ctx.beginPath();
-    ctx.moveTo(x + w * 0.55, topY);
+    const tiltSag = (style === 1 ? 0.8 : -0.5) * scale;
+    ctx.moveTo(x + w * 0.55 + tiltSag, topY);
     // Left half
     ctx.bezierCurveTo(
       leftX - 1.0 * scale, topY + (centerY - topY) * 0.3,
@@ -770,17 +859,17 @@ export class MathRenderer {
     ctx.bezierCurveTo(
       rightX + 1.2 * scale, bottomY - (bottomY - centerY) * 0.3,
       rightX + 1.0 * scale, topY + (centerY - topY) * 0.3,
-      x + w * 0.55, topY
+      x + w * 0.55 + tiltSag, topY
     );
     ctx.stroke();
 
     // Horizontal crossbar through center with natural pen wiggle
     ctx.beginPath();
-    const barY = centerY + (this.noise.random() - 0.5) * 1.0 * scale;
+    const barY = centerY + (this.noise.random() - 0.5) * 1.2 * scale;
     ctx.moveTo(leftX + 0.8 * scale, barY);
     ctx.quadraticCurveTo(
-      x + w * 0.5, barY - 1.2 * scale,
-      rightX - 0.5 * scale, barY + 0.6 * scale
+      x + w * 0.5, barY - (style === 1 ? 0.4 : 1.4) * scale,
+      rightX - 0.5 * scale, barY + (this.noise.random() - 0.5) * 0.8 * scale
     );
     ctx.stroke();
 
@@ -845,9 +934,9 @@ export class MathRenderer {
     const leftBottomY = bottomY + (r4 - 0.4) * 1.8 * scale;
     const rightBottomY = bottomY + (r5 - 0.5) * 1.8 * scale;
 
-    // Allograph selection:
-    // 0: Classic Cursive (~50%), 1: Rapid Speed Print (~30%), 2: Continuous Loop Cursive (~20%)
-    const styleRoll = (r1 * 7 + r2 * 13) % 1.0;
+    // Allograph selection via anti-duplication engine:
+    // 0: Classic Cursive, 1: Rapid Speed Print, 2: Continuous Loop Cursive
+    const style = this.getNextAllograph('pi', 3);
 
     ctx.save();
     ctx.strokeStyle = inkColor;
@@ -855,7 +944,7 @@ export class MathRenderer {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    if (styleRoll < 0.22) {
+    if (style === 2) {
       // --- Allograph 2: Continuous Connected Cursive Loop π ---
       // Student enters from bottom/left, loops up the left leg, loops into crossbar, then drops right leg
       const entryX = leftLegTopX - (2.5 + r3 * 2.0) * scale;
@@ -902,7 +991,7 @@ export class MathRenderer {
       );
       ctx.stroke();
 
-    } else if (styleRoll < 0.55) {
+    } else if (style === 1) {
       // --- Allograph 1: Rapid Speed Print π ---
       // Swift horizontal crossbar + two energetic, slightly tilted downward strokes
       ctx.beginPath();
@@ -978,7 +1067,9 @@ export class MathRenderer {
 
   /**
    * Procedural Lowercase Greek Beta (β):
-   * Long descending left stem with double curved loops.
+   * 2 distinct allographs:
+   * - Allograph 0: Long descending stem with dual rounded loops.
+   * - Allograph 1: Rapid cursive beta with flowing continuous turnaround.
    */
   public drawBeta(
     ctx: CanvasRenderingContext2D,
@@ -988,11 +1079,12 @@ export class MathRenderer {
     inkColor: string
   ): number {
     const scale = fontSize / 28;
-    const w = 11.5 * scale;
-    const topY = y - fontSize * 0.68;
-    const midY = y - fontSize * 0.32;
+    const style = this.getNextAllograph('beta', 2);
+    const w = (11.0 + this.noise.random() * 2.8) * scale;
+    const topY = y - fontSize * (0.66 + this.noise.random() * 0.06);
+    const midY = y - fontSize * (0.30 + (this.noise.random() - 0.5) * 0.04);
     const bottomY = y;
-    const descY = y + fontSize * 0.22;
+    const descY = y + fontSize * (0.20 + this.noise.random() * 0.08);
 
     ctx.save();
     ctx.strokeStyle = inkColor;
@@ -1000,23 +1092,39 @@ export class MathRenderer {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    // Descending stem up to top loop
     ctx.beginPath();
-    ctx.moveTo(x + w * 0.22, descY);
-    ctx.lineTo(x + w * 0.22, topY + 2 * scale);
-    ctx.quadraticCurveTo(x + w * 0.22, topY, x + w * 0.35, topY);
-    // Upper loop
-    ctx.bezierCurveTo(
-      x + w * 0.85, topY,
-      x + w * 0.85, midY,
-      x + w * 0.25, midY
-    );
-    // Lower loop
-    ctx.bezierCurveTo(
-      x + w * 0.92, midY,
-      x + w * 0.92, bottomY,
-      x + w * 0.15, bottomY
-    );
+    if (style === 1) {
+      // Rapid cursive beta
+      ctx.moveTo(x + w * 0.25, descY);
+      ctx.lineTo(x + w * 0.20, topY + 1.5 * scale);
+      ctx.bezierCurveTo(
+        x + w * 0.78, topY - 1.5 * scale,
+        x + w * 0.82, midY,
+        x + w * 0.28, midY
+      );
+      ctx.bezierCurveTo(
+        x + w * 0.88, midY,
+        x + w * 0.90, bottomY,
+        x + w * 0.12, bottomY
+      );
+    } else {
+      // Descending stem up to top loop
+      ctx.moveTo(x + w * 0.22, descY);
+      ctx.lineTo(x + w * 0.22, topY + 2 * scale);
+      ctx.quadraticCurveTo(x + w * 0.22, topY, x + w * 0.35, topY);
+      // Upper loop
+      ctx.bezierCurveTo(
+        x + w * 0.85, topY,
+        x + w * 0.85, midY,
+        x + w * 0.25, midY
+      );
+      // Lower loop
+      ctx.bezierCurveTo(
+        x + w * 0.92, midY,
+        x + w * 0.92, bottomY,
+        x + w * 0.15, bottomY
+      );
+    }
     ctx.stroke();
 
     ctx.restore();
@@ -1025,7 +1133,9 @@ export class MathRenderer {
 
   /**
    * Procedural Lowercase Greek Lambda (λ):
-   * Diagonal spine with secondary forward leg.
+   * 2 distinct allographs:
+   * - Allograph 0: Curved diagonal spine with top hook + branching leg.
+   * - Allograph 1: Decisive straight forward slash with branching right leg.
    */
   public drawLambda(
     ctx: CanvasRenderingContext2D,
@@ -1035,8 +1145,9 @@ export class MathRenderer {
     inkColor: string
   ): number {
     const scale = fontSize / 28;
-    const w = 11.5 * scale;
-    const topY = y - fontSize * 0.68;
+    const style = this.getNextAllograph('lambda', 2);
+    const w = (11.0 + this.noise.random() * 2.8) * scale;
+    const topY = y - fontSize * (0.66 + this.noise.random() * 0.06);
     const bottomY = y;
 
     ctx.save();
@@ -1045,11 +1156,17 @@ export class MathRenderer {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    // Main diagonal spine with slight top hook
     ctx.beginPath();
-    ctx.moveTo(x + w * 0.55, topY);
-    ctx.quadraticCurveTo(x + w * 0.50, topY + 3 * scale, x + w * 0.40, y - fontSize * 0.35);
-    ctx.lineTo(x + 1.0 * scale, bottomY);
+    if (style === 1) {
+      // Straight diagonal stroke
+      ctx.moveTo(x + w * 0.52, topY);
+      ctx.lineTo(x + 1.0 * scale, bottomY);
+    } else {
+      // Curved spine with slight top hook
+      ctx.moveTo(x + w * 0.55, topY);
+      ctx.quadraticCurveTo(x + w * 0.50, topY + 3 * scale, x + w * 0.40, y - fontSize * 0.35);
+      ctx.lineTo(x + 1.0 * scale, bottomY);
+    }
     ctx.stroke();
 
     // Branching front leg
@@ -1064,7 +1181,9 @@ export class MathRenderer {
 
   /**
    * Procedural Lowercase Greek Phi (φ):
-   * Central oval with continuous vertical dividing stem.
+   * 2 distinct allographs:
+   * - Allograph 0: Oval body with dividing vertical stem.
+   * - Allograph 1: Continuous cursive loop entered from stem.
    */
   public drawPhi(
     ctx: CanvasRenderingContext2D,
@@ -1074,9 +1193,10 @@ export class MathRenderer {
     inkColor: string
   ): number {
     const scale = fontSize / 28;
-    const w = 11.5 * scale;
-    const stemTopY = y - fontSize * 0.65;
-    const stemBotY = y + fontSize * 0.22;
+    const style = this.getNextAllograph('phi', 2);
+    const w = (11.2 + this.noise.random() * 2.6) * scale;
+    const stemTopY = y - fontSize * (0.64 + this.noise.random() * 0.05);
+    const stemBotY = y + fontSize * (0.20 + this.noise.random() * 0.05);
     const loopTopY = y - fontSize * 0.44;
     const loopBotY = y - fontSize * 0.02;
 
@@ -1086,6 +1206,8 @@ export class MathRenderer {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
+    const stemSlant = (style === 1 ? -0.8 : 0.4) * scale;
+
     // Oval body
     ctx.beginPath();
     ctx.ellipse(
@@ -1093,7 +1215,7 @@ export class MathRenderer {
       (loopTopY + loopBotY) / 2,
       w * 0.42,
       (loopBotY - loopTopY) / 2,
-      0,
+      (style === 1 ? -0.08 : 0.05),
       0,
       Math.PI * 2
     );
@@ -1101,8 +1223,8 @@ export class MathRenderer {
 
     // Vertical stem
     ctx.beginPath();
-    ctx.moveTo(x + w * 0.52, stemTopY);
-    ctx.lineTo(x + w * 0.48, stemBotY);
+    ctx.moveTo(x + w * 0.50 + stemSlant, stemTopY);
+    ctx.lineTo(x + w * 0.50 - stemSlant, stemBotY);
     ctx.stroke();
 
     ctx.restore();
@@ -1111,7 +1233,10 @@ export class MathRenderer {
 
   /**
    * Procedural Lowercase Greek Omega (ω):
-   * Curved double bowl with outward shoulder wings.
+   * 3 authentic human allographs with dynamic anti-duplication:
+   * - Allograph 0: Classic Greek double-bowl with outward shoulder wings.
+   * - Allograph 1: Rapid student cursive sharp-cusp w-style with forward slant.
+   * - Allograph 2: Continuous flowing cursive omega with entry loop and flared exit trail.
    */
   public drawOmega(
     ctx: CanvasRenderingContext2D,
@@ -1121,9 +1246,10 @@ export class MathRenderer {
     inkColor: string
   ): number {
     const scale = fontSize / 28;
-    const w = 12.5 * scale;
-    const topY = y - fontSize * 0.40;
-    const bottomY = y;
+    const style = this.getNextAllograph('omega', 3);
+    const w = (12.0 + this.noise.random() * 3.6) * scale;
+    const topY = y - fontSize * (0.38 + this.noise.random() * 0.06);
+    const bottomY = y + (this.noise.random() - 0.5) * 1.5;
 
     ctx.save();
     ctx.strokeStyle = inkColor;
@@ -1132,11 +1258,44 @@ export class MathRenderer {
     ctx.lineJoin = 'round';
 
     ctx.beginPath();
-    ctx.moveTo(x + 0.5 * scale, topY + 4 * scale);
-    ctx.quadraticCurveTo(x + w * 0.15, topY - 1 * scale, x + w * 0.28, bottomY - 1 * scale);
-    ctx.quadraticCurveTo(x + w * 0.40, bottomY + 1 * scale, x + w * 0.50, topY + 3 * scale);
-    ctx.quadraticCurveTo(x + w * 0.60, bottomY + 1 * scale, x + w * 0.72, bottomY - 1 * scale);
-    ctx.quadraticCurveTo(x + w * 0.85, topY - 1 * scale, x + w, topY + 4 * scale);
+    if (style === 1) {
+      // Rapid student cursive sharp-cusp omega
+      ctx.moveTo(x + 0.8 * scale, topY + 2.8 * scale);
+      ctx.quadraticCurveTo(x + w * 0.18, topY + 0.5 * scale, x + w * 0.30, bottomY);
+      ctx.lineTo(x + w * 0.50, topY + 2.2 * scale);
+      ctx.lineTo(x + w * 0.70, bottomY);
+      ctx.quadraticCurveTo(x + w * 0.82, bottomY - 0.8 * scale, x + w, topY + 2.0 * scale);
+    } else if (style === 2) {
+      // Continuous flowing cursive omega with entry loop
+      ctx.moveTo(x + 0.3 * scale, topY + 1.2 * scale);
+      ctx.bezierCurveTo(
+        x + w * 0.12, topY - 1.5 * scale,
+        x + w * 0.16, bottomY - 2.5 * scale,
+        x + w * 0.32, bottomY
+      );
+      ctx.bezierCurveTo(
+        x + w * 0.42, bottomY + 0.8 * scale,
+        x + w * 0.45, topY + 2.8 * scale,
+        x + w * 0.50, topY + 3.8 * scale
+      );
+      ctx.bezierCurveTo(
+        x + w * 0.55, topY + 2.8 * scale,
+        x + w * 0.58, bottomY + 0.8 * scale,
+        x + w * 0.68, bottomY
+      );
+      ctx.bezierCurveTo(
+        x + w * 0.82, bottomY - 2.5 * scale,
+        x + w * 0.88, topY - 1.2 * scale,
+        x + w, topY + 2.2 * scale
+      );
+    } else {
+      // Classic Greek double-bowl with outward shoulder wings
+      ctx.moveTo(x + 0.5 * scale, topY + 4 * scale);
+      ctx.quadraticCurveTo(x + w * 0.15, topY - 1 * scale, x + w * 0.28, bottomY - 0.8 * scale);
+      ctx.quadraticCurveTo(x + w * 0.40, bottomY + 1 * scale, x + w * 0.50, topY + 3.2 * scale);
+      ctx.quadraticCurveTo(x + w * 0.60, bottomY + 1 * scale, x + w * 0.72, bottomY - 0.8 * scale);
+      ctx.quadraticCurveTo(x + w * 0.85, topY - 1 * scale, x + w, topY + 3.8 * scale);
+    }
     ctx.stroke();
 
     ctx.restore();
@@ -1145,7 +1304,9 @@ export class MathRenderer {
 
   /**
    * Procedural Lowercase Greek Mu (μ):
-   * Descending left tail with rounded u-body.
+   * 2 distinct allographs:
+   * - Allograph 0: Descending left tail with rounded u-body.
+   * - Allograph 1: Rapid cursive mu with forward slant.
    */
   public drawMu(
     ctx: CanvasRenderingContext2D,
@@ -1155,10 +1316,11 @@ export class MathRenderer {
     inkColor: string
   ): number {
     const scale = fontSize / 28;
-    const w = 11.5 * scale;
+    const style = this.getNextAllograph('mu', 2);
+    const w = (11.0 + this.noise.random() * 2.8) * scale;
     const topY = y - fontSize * 0.40;
     const bottomY = y;
-    const descY = y + fontSize * 0.22;
+    const descY = y + fontSize * (0.20 + this.noise.random() * 0.06);
 
     ctx.save();
     ctx.strokeStyle = inkColor;
@@ -1167,11 +1329,20 @@ export class MathRenderer {
     ctx.lineJoin = 'round';
 
     ctx.beginPath();
-    ctx.moveTo(x + w * 0.18, descY);
-    ctx.lineTo(x + w * 0.18, topY);
-    ctx.quadraticCurveTo(x + w * 0.20, bottomY, x + w * 0.55, bottomY);
-    ctx.lineTo(x + w * 0.80, topY);
-    ctx.lineTo(x + w * 0.80, bottomY);
+    if (style === 1) {
+      // Rapid cursive mu
+      ctx.moveTo(x + w * 0.16, descY);
+      ctx.lineTo(x + w * 0.22, topY);
+      ctx.quadraticCurveTo(x + w * 0.26, bottomY + 0.5 * scale, x + w * 0.58, bottomY);
+      ctx.lineTo(x + w * 0.82, topY);
+      ctx.lineTo(x + w * 0.84, bottomY + 1 * scale);
+    } else {
+      ctx.moveTo(x + w * 0.18, descY);
+      ctx.lineTo(x + w * 0.18, topY);
+      ctx.quadraticCurveTo(x + w * 0.20, bottomY, x + w * 0.55, bottomY);
+      ctx.lineTo(x + w * 0.80, topY);
+      ctx.lineTo(x + w * 0.80, bottomY);
+    }
     ctx.stroke();
 
     ctx.restore();
@@ -1180,7 +1351,9 @@ export class MathRenderer {
 
   /**
    * Procedural Lowercase Greek Sigma (σ):
-   * Circular body with horizontal top flag.
+   * 2 distinct allographs:
+   * - Allograph 0: Circular body with horizontal top flag.
+   * - Allograph 1: Fluid continuous top flag into round belly.
    */
   public drawSigma(
     ctx: CanvasRenderingContext2D,
@@ -1190,7 +1363,8 @@ export class MathRenderer {
     inkColor: string
   ): number {
     const scale = fontSize / 28;
-    const w = 11.5 * scale;
+    const style = this.getNextAllograph('sigma', 2);
+    const w = (11.0 + this.noise.random() * 2.6) * scale;
     const topY = y - fontSize * 0.40;
     const bottomY = y;
 
@@ -1200,22 +1374,40 @@ export class MathRenderer {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    ctx.beginPath();
-    ctx.moveTo(x + w * 0.35, topY);
-    ctx.lineTo(x + w, topY);
-    ctx.stroke();
+    if (style === 1) {
+      // Continuous stroke
+      ctx.beginPath();
+      ctx.moveTo(x + w, topY);
+      ctx.lineTo(x + w * 0.45, topY);
+      ctx.bezierCurveTo(
+        x + w * 0.05, topY,
+        x + w * 0.05, bottomY,
+        x + w * 0.45, bottomY
+      );
+      ctx.bezierCurveTo(
+        x + w * 0.85, bottomY,
+        x + w * 0.85, topY + (bottomY - topY) * 0.3,
+        x + w * 0.45, topY + (bottomY - topY) * 0.3
+      );
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(x + w * 0.35, topY);
+      ctx.lineTo(x + w, topY);
+      ctx.stroke();
 
-    ctx.beginPath();
-    ctx.ellipse(
-      x + w * 0.45,
-      (topY + bottomY) / 2,
-      w * 0.40,
-      (bottomY - topY) / 2,
-      0,
-      0,
-      Math.PI * 2
-    );
-    ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(
+        x + w * 0.45,
+        (topY + bottomY) / 2,
+        w * 0.40,
+        (bottomY - topY) / 2,
+        0,
+        0,
+        Math.PI * 2
+      );
+      ctx.stroke();
+    }
 
     ctx.restore();
     return w + 4 * scale;
@@ -1252,7 +1444,81 @@ export class MathRenderer {
     return 3 * spacing + 4 * scale;
   }
 
-  public drawPartial(
+  /**
+   * Hand-drawn asymptotic equivalence tilde (∼ or \sim)
+   * 3 authentic human allographs with dynamic anti-duplication:
+   * - Allograph 0: Classic balanced sine wave.
+   * - Allograph 1: Rapid tilted S-curve with upward flick.
+   * - Allograph 2: Gentle shallow ripple wave.
+   */
+  public drawSim(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string
+  ): number {
+    const scale = fontSize / 28;
+    const style = this.getNextAllograph('sim', 3);
+    const w = (13.5 + this.noise.random() * 4.0) * scale;
+    const h = (3.5 + this.noise.random() * 1.8) * scale;
+    const cy = y - fontSize * 0.35 + (this.noise.random() - 0.5) * 1.5;
+    const startX = x + 2;
+    const endX = startX + w;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = Math.max(1.3, this.getBaseLineWidth(scale, 0.95));
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.shadowColor = inkColor;
+    ctx.shadowBlur = 0.35;
+    ctx.globalAlpha = 0.90;
+
+    ctx.beginPath();
+    if (style === 1) {
+      // Rapid tilted wave with upward flick
+      ctx.moveTo(startX, cy + 0.6 * scale);
+      ctx.quadraticCurveTo(startX + w * 0.22, cy - h * 1.15, startX + w * 0.48, cy - 0.2 * scale);
+      ctx.quadraticCurveTo(startX + w * 0.74, cy + h * 1.15, endX, cy - 1.2 * scale);
+    } else if (style === 2) {
+      // Gentle shallow ripple
+      ctx.moveTo(startX, cy - 0.4 * scale);
+      ctx.bezierCurveTo(
+        startX + w * 0.28, cy - h * 0.75,
+        startX + w * 0.35, cy - h * 0.75,
+        startX + w * 0.52, cy
+      );
+      ctx.bezierCurveTo(
+        startX + w * 0.65, cy + h * 0.75,
+        startX + w * 0.78, cy + h * 0.75,
+        endX, cy + 0.2 * scale
+      );
+    } else {
+      // Classic balanced sine wave
+      ctx.moveTo(startX, cy);
+      ctx.bezierCurveTo(
+        startX + w * 0.25, cy - h * 0.9,
+        startX + w * 0.35, cy - h * 0.9,
+        startX + w * 0.5, cy
+      );
+      ctx.bezierCurveTo(
+        startX + w * 0.65, cy + h * 0.9,
+        startX + w * 0.75, cy + h * 0.9,
+        endX, cy
+      );
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    return w + 7 * scale;
+  }
+
+  /**
+   * Hand-drawn Greek Capital Gamma (Γ)
+   * Rapid top horizontal bar followed by left vertical stem with natural student overshoot.
+   */
+  public drawGamma(
     ctx: CanvasRenderingContext2D,
     x: number,
     y: number,
@@ -1261,27 +1527,122 @@ export class MathRenderer {
   ): number {
     const scale = fontSize / 28;
     const w = 12 * scale;
-    const topY = y - fontSize * 0.65;
-    const bottomY = y;
+    const h = 20 * scale;
+    const topY = y - fontSize * 0.74;
+    const botY = y + 1;
+    const startX = x + 2;
 
     ctx.save();
     ctx.strokeStyle = inkColor;
-    ctx.lineWidth = Math.max(1.3, 1.7 * scale);
+    ctx.lineWidth = Math.max(1.4, this.getBaseLineWidth(scale, 1.05));
     ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.shadowColor = inkColor;
+    ctx.shadowBlur = 0.35;
+    ctx.globalAlpha = 0.92;
 
+    // Top horizontal bar
+    const bowTop = (this.noise.random() - 0.45) * 1.2;
     ctx.beginPath();
-    // Top curl
-    ctx.moveTo(x + w * 0.85, topY + 2 * scale);
-    ctx.bezierCurveTo(x + w * 0.6, topY - 2 * scale, x + w * 0.1, topY + 4 * scale, x + w * 0.15, topY + (bottomY - topY) * 0.5);
-    // Lower bowl
-    ctx.bezierCurveTo(x + w * 0.05, bottomY + 2 * scale, x + w * 0.85, bottomY + 2 * scale, x + w * 0.85, topY + (bottomY - topY) * 0.45);
-    ctx.bezierCurveTo(x + w * 0.85, topY, x + w * 0.25, topY + (bottomY - topY) * 0.5, x + w * 0.15, bottomY - 3 * scale);
+    ctx.moveTo(startX - 1, topY + (this.noise.random() - 0.5));
+    ctx.quadraticCurveTo(startX + w * 0.5, topY + bowTop, startX + w, topY + (this.noise.random() - 0.5) * 1.2);
+    ctx.stroke();
+
+    // Vertical downward stem
+    const bowStem = (this.noise.random() - 0.5) * 1.2;
+    ctx.beginPath();
+    ctx.moveTo(startX, topY - 1);
+    ctx.quadraticCurveTo(startX + bowStem, topY + h * 0.5, startX - 0.5, botY);
     ctx.stroke();
 
     ctx.restore();
     return w + 6 * scale;
   }
 
+  /**
+   * Draws a small handwritten circumflex accent (^) over a symbol (e.g. \hat{f}, \hat{y}, \hat{\omega})
+   */
+  public drawHatAccent(
+    ctx: CanvasRenderingContext2D,
+    centerX: number,
+    topY: number,
+    fontSize: number,
+    inkColor: string
+  ) {
+    const hw = fontSize * 0.16;
+    const hh = fontSize * 0.14;
+    const apexY = topY - 3 + (this.noise.random() - 0.5) * 1.0;
+    const apexX = centerX + (this.noise.random() - 0.5) * 1.0;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = Math.max(1.2, this.getBaseLineWidth(fontSize / 28, 0.85));
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.shadowColor = inkColor;
+    ctx.shadowBlur = 0.3;
+    ctx.globalAlpha = 0.90;
+
+    ctx.beginPath();
+    ctx.moveTo(apexX - hw, apexY + hh);
+    ctx.lineTo(apexX, apexY);
+    ctx.lineTo(apexX + hw, apexY + hh);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  /**
+   * Procedural Partial Derivative (∂):
+   * 2 distinct allographs:
+   * - Allograph 0: Classic curved top hook with rounded lower belly.
+   * - Allograph 1: Rapid cursive loop partial.
+   */
+  public drawPartial(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string
+  ): number {
+    const scale = fontSize / 28;
+    const style = this.getNextAllograph('partial', 2);
+    const w = (11.5 + this.noise.random() * 2.5) * scale;
+    const topY = y - fontSize * (0.64 + this.noise.random() * 0.05);
+    const bottomY = y;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = Math.max(1.3, this.getBaseLineWidth(scale, 0.95));
+    ctx.lineCap = 'round';
+
+    ctx.beginPath();
+    if (style === 1) {
+      // Rapid cursive partial
+      ctx.moveTo(x + w * 0.82, topY + 1 * scale);
+      ctx.bezierCurveTo(x + w * 0.4, topY - 2 * scale, x + w * 0.1, topY + 3 * scale, x + w * 0.12, topY + (bottomY - topY) * 0.45);
+      ctx.bezierCurveTo(x + w * 0.08, bottomY + 1.5 * scale, x + w * 0.88, bottomY + 1.5 * scale, x + w * 0.82, topY + (bottomY - topY) * 0.40);
+      ctx.bezierCurveTo(x + w * 0.82, topY + 4 * scale, x + w * 0.35, topY + (bottomY - topY) * 0.45, x + w * 0.15, bottomY - 1 * scale);
+    } else {
+      // Classic curved partial
+      ctx.moveTo(x + w * 0.85, topY + 2 * scale);
+      ctx.bezierCurveTo(x + w * 0.6, topY - 2 * scale, x + w * 0.1, topY + 4 * scale, x + w * 0.15, topY + (bottomY - topY) * 0.5);
+      ctx.bezierCurveTo(x + w * 0.05, bottomY + 2 * scale, x + w * 0.85, bottomY + 2 * scale, x + w * 0.85, topY + (bottomY - topY) * 0.45);
+      ctx.bezierCurveTo(x + w * 0.85, topY, x + w * 0.25, topY + (bottomY - topY) * 0.5, x + w * 0.15, bottomY - 3 * scale);
+    }
+    ctx.stroke();
+
+    ctx.restore();
+    return w + 6 * scale;
+  }
+
+  /**
+   * Procedural Infinity Symbol (∞):
+   * 3 authentic human allographs with dynamic anti-duplication:
+   * - Allograph 0: Continuous center-crossover figure-8 with organic loop proportions.
+   * - Allograph 1: Fluid asymmetric oval-cross (left/right lobe size variance & forward slant).
+   * - Allograph 2: Rapid cursive loop infinity entering from lower left.
+   */
   public drawInfinity(
     ctx: CanvasRenderingContext2D,
     x: number,
@@ -1290,24 +1651,43 @@ export class MathRenderer {
     inkColor: string
   ): number {
     const scale = fontSize / 28;
-    const w = 18 * scale;
-    const centerY = y - fontSize * 0.35;
-    const h = 7 * scale;
+    const style = this.getNextAllograph('infinity', 3);
+    const w = (16.0 + this.noise.random() * 4.5) * scale;
+    const centerY = y - fontSize * 0.35 + (this.noise.random() - 0.5) * 1.5;
+    const h = (6.0 + this.noise.random() * 2.2) * scale;
 
     ctx.save();
     ctx.strokeStyle = inkColor;
-    ctx.lineWidth = Math.max(1.3, 1.7 * scale);
+    ctx.lineWidth = Math.max(1.3, this.getBaseLineWidth(scale, 0.95));
     ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
 
     const cx = x + w * 0.5;
+
     ctx.beginPath();
-    // Left loop (slightly smaller)
-    ctx.moveTo(cx, centerY);
-    ctx.bezierCurveTo(cx - w * 0.25, centerY - h, x - 1 * scale, centerY - h * 0.7, x, centerY);
-    ctx.bezierCurveTo(x - 1 * scale, centerY + h * 0.7, cx - w * 0.25, centerY + h, cx, centerY);
-    // Right loop (slightly larger + asymmetric hand slant)
-    ctx.bezierCurveTo(cx + w * 0.25, centerY - h * 1.08, x + w + 1 * scale, centerY - h * 0.9, x + w, centerY);
-    ctx.bezierCurveTo(x + w + 1 * scale, centerY + h * 0.9, cx + w * 0.25, centerY + h * 1.08, cx, centerY);
+    if (style === 1) {
+      // Fluid asymmetric oval-cross
+      const cx1 = x + w * (0.44 + (this.noise.random() - 0.5) * 0.08);
+      ctx.moveTo(cx1, centerY);
+      ctx.bezierCurveTo(cx1 - w * 0.22, centerY - h * 0.88, x, centerY - h * 0.65, x, centerY);
+      ctx.bezierCurveTo(x, centerY + h * 0.65, cx1 - w * 0.22, centerY + h * 0.88, cx1, centerY);
+      ctx.bezierCurveTo(cx1 + w * 0.28, centerY - h * 1.10, x + w, centerY - h * 0.80, x + w, centerY);
+      ctx.bezierCurveTo(x + w, centerY + h * 0.80, cx1 + w * 0.28, centerY + h * 1.10, cx1, centerY);
+    } else if (style === 2) {
+      // Rapid cursive loop infinity (entry from lower left)
+      ctx.moveTo(x + 1 * scale, centerY + h * 0.45);
+      ctx.bezierCurveTo(x - 0.5 * scale, centerY - h * 0.85, cx - w * 0.2, centerY - h * 1.05, cx, centerY);
+      ctx.bezierCurveTo(cx + w * 0.22, centerY + h * 1.05, x + w + 1 * scale, centerY + h * 0.70, x + w, centerY);
+      ctx.bezierCurveTo(x + w, centerY - h * 0.90, cx + w * 0.20, centerY - h * 0.90, cx - 1 * scale, centerY + 0.5 * scale);
+      ctx.quadraticCurveTo(cx - w * 0.20, centerY + h * 0.90, x + 1 * scale, centerY + h * 0.45);
+    } else {
+      // Classic continuous figure-8 crossover
+      ctx.moveTo(cx, centerY);
+      ctx.bezierCurveTo(cx - w * 0.25, centerY - h, x - 0.5 * scale, centerY - h * 0.7, x, centerY);
+      ctx.bezierCurveTo(x - 0.5 * scale, centerY + h * 0.7, cx - w * 0.25, centerY + h, cx, centerY);
+      ctx.bezierCurveTo(cx + w * 0.25, centerY - h * 1.06, x + w + 0.5 * scale, centerY - h * 0.9, x + w, centerY);
+      ctx.bezierCurveTo(x + w + 0.5 * scale, centerY + h * 0.9, cx + w * 0.25, centerY + h * 1.06, cx, centerY);
+    }
     ctx.stroke();
 
     ctx.restore();
@@ -1653,8 +2033,10 @@ export class MathRenderer {
 
   /**
    * Procedural Square Brackets [ ]
-   * Replaces CAD rectilinear 90° corners with authentic continuous hand gesture:
-   * Curved entry cap, gently bowed stem (±1.2px), and rounded bottom corner with human overshoot.
+   * 3 authentic human allographs with dynamic anti-duplication:
+   * - Allograph 0: Organic hand bracket with curved entry dip, gently bowed stem, and bottom overshoot.
+   * - Allograph 1: Rapid slanted bracket with crisp corners and decisive exit cap.
+   * - Allograph 2: Soft student bracket with generous rounded transitions.
    */
   public drawBracket(
     ctx: CanvasRenderingContext2D,
@@ -1666,40 +2048,54 @@ export class MathRenderer {
     fontSize: number
   ): number {
     const scale = fontSize / 28;
+    const style = this.getNextAllograph('bracket_' + (isOpen ? 'open' : 'close'), 3);
     const height = bottomY - topY;
-    const capW = (7.5 + (this.noise.random() - 0.5) * 1.5) * scale;
+    const capW = (7.5 + (this.noise.random() - 0.5) * 2.0) * scale;
     const dir = isOpen ? 1 : -1;
     const startX = isOpen ? x + capW : x;
     const stemX = isOpen ? x + 1.2 * scale : x + capW - 1.2 * scale;
     const endX = isOpen ? x + capW : x;
-    const lineWidth = this.getBaseLineWidth(scale, 0.95);
+    const lineWidth = this.getBaseLineWidth(scale, 0.95 + (this.noise.random() - 0.5) * 0.10);
 
     ctx.save();
     ctx.strokeStyle = inkColor;
     ctx.lineWidth = lineWidth;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.globalAlpha = 0.90;
+    ctx.globalAlpha = 0.92;
 
     ctx.beginPath();
-    // 1. Top cap with organic entry dip
-    ctx.moveTo(startX, topY + (this.noise.random() - 0.5) * 1.5 * scale);
-    ctx.quadraticCurveTo(
-      stemX + dir * 1.5 * scale, topY - 0.5 * scale,
-      stemX, topY + 4 * scale
-    );
-    // 2. Continuous bowed stem down (subtle inward/outward curve)
-    ctx.bezierCurveTo(
-      stemX - dir * 1.2 * scale, topY + height * 0.35,
-      stemX - dir * 0.8 * scale, bottomY - height * 0.35,
-      stemX, bottomY - 4 * scale
-    );
-    // 3. Continuous rounded corner into bottom cap with human overshoot
-    const overshoot = (1.8 + this.noise.random() * 2.5) * scale;
-    ctx.quadraticCurveTo(
-      stemX + dir * 1.5 * scale, bottomY + 0.5 * scale,
-      endX + dir * overshoot, bottomY + (this.noise.random() - 0.5) * 1.5 * scale
-    );
+    if (style === 1) {
+      // Rapid slanted bracket
+      const slantX = (isOpen ? -0.8 : 0.8) * scale;
+      ctx.moveTo(startX, topY + (this.noise.random() - 0.5) * 1.0 * scale);
+      ctx.lineTo(stemX, topY);
+      ctx.lineTo(stemX + slantX, bottomY);
+      ctx.lineTo(endX + dir * 1.5 * scale, bottomY + (this.noise.random() - 0.5) * 1.0 * scale);
+    } else if (style === 2) {
+      // Soft rounded student bracket
+      ctx.moveTo(startX, topY + 1.0 * scale);
+      ctx.quadraticCurveTo(stemX + dir * 2.0 * scale, topY - 1.0 * scale, stemX, topY + 5 * scale);
+      ctx.lineTo(stemX, bottomY - 5 * scale);
+      ctx.quadraticCurveTo(stemX + dir * 2.0 * scale, bottomY + 1.0 * scale, endX, bottomY);
+    } else {
+      // Organic hand bracket with entry dip and human overshoot
+      ctx.moveTo(startX, topY + (this.noise.random() - 0.5) * 1.5 * scale);
+      ctx.quadraticCurveTo(
+        stemX + dir * 1.5 * scale, topY - 0.5 * scale,
+        stemX, topY + 4 * scale
+      );
+      ctx.bezierCurveTo(
+        stemX - dir * 1.2 * scale, topY + height * 0.35,
+        stemX - dir * 0.8 * scale, bottomY - height * 0.35,
+        stemX, bottomY - 4 * scale
+      );
+      const overshoot = (1.8 + this.noise.random() * 2.5) * scale;
+      ctx.quadraticCurveTo(
+        stemX + dir * 1.5 * scale, bottomY + 0.5 * scale,
+        endX + dir * overshoot, bottomY + (this.noise.random() - 0.5) * 1.5 * scale
+      );
+    }
     ctx.stroke();
     ctx.restore();
 
@@ -1708,8 +2104,10 @@ export class MathRenderer {
 
   /**
    * Procedural Curly Braces { }
-   * Replaces symmetric mirror halves with authentic human lobe asymmetry:
-   * Shorter top lobe (45% height), downward-angled center beak (-10°), longer bottom lobe (55%).
+   * 3 authentic human allographs with dynamic anti-duplication:
+   * - Allograph 0: Classic human asymmetric lobes (45% top, 55% bottom) with downward beak.
+   * - Allograph 1: Rapid crisp-cusp brace with pointed center beak and outward flared horns.
+   * - Allograph 2: Fluid cursive rounded brace with softened turnaround.
    */
   public drawBrace(
     ctx: CanvasRenderingContext2D,
@@ -1721,10 +2119,11 @@ export class MathRenderer {
     fontSize: number
   ): number {
     const scale = fontSize / 28;
-    const braceW = (7.5 + (this.noise.random() - 0.5) * 1.5) * scale;
+    const style = this.getNextAllograph('brace_' + (isOpen ? 'open' : 'close'), 3);
+    const braceW = (7.5 + (this.noise.random() - 0.5) * 2.0) * scale;
     const totalH = bottomY - topY;
-    // Asymmetric lobes: Top lobe is 45% of height, bottom lobe is 55%
-    const cuspY = topY + totalH * 0.45;
+    const cuspRatio = style === 1 ? 0.48 : (0.43 + (this.noise.random() - 0.5) * 0.04);
+    const cuspY = topY + totalH * cuspRatio;
     const cuspX = isOpen ? x : x + braceW;
     const outerX = isOpen ? x + braceW : x;
     const lineWidth = this.getBaseLineWidth(scale, 0.95);
@@ -1734,23 +2133,51 @@ export class MathRenderer {
     ctx.lineWidth = lineWidth;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.globalAlpha = 0.90;
+    ctx.globalAlpha = 0.92;
 
     ctx.beginPath();
     if (isOpen) {
-      // { Starts top right, tighter top lobe, downward beak at cusp, longer bottom lobe
-      ctx.moveTo(outerX, topY + (this.noise.random() - 0.5) * 1.5 * scale);
-      ctx.quadraticCurveTo(x + braceW * 0.25, topY + 1 * scale, x + braceW * 0.28, topY + totalH * 0.22);
-      ctx.bezierCurveTo(x + braceW * 0.28, cuspY - 3 * scale, x + braceW * 0.10, cuspY - 1 * scale, cuspX, cuspY);
-      ctx.bezierCurveTo(x + braceW * 0.10, cuspY + 2 * scale, x + braceW * 0.25, cuspY + 5 * scale, x + braceW * 0.25, topY + totalH * 0.75);
-      ctx.quadraticCurveTo(x + braceW * 0.22, bottomY - 1 * scale, outerX + 1.5 * scale, bottomY + (this.noise.random() - 0.5) * 1.5 * scale);
+      if (style === 1) {
+        // Rapid crisp-cusp {
+        ctx.moveTo(outerX + 1 * scale, topY);
+        ctx.quadraticCurveTo(x + braceW * 0.20, topY, x + braceW * 0.20, cuspY - 3 * scale);
+        ctx.lineTo(cuspX - 0.5 * scale, cuspY);
+        ctx.lineTo(x + braceW * 0.20, cuspY + 3 * scale);
+        ctx.quadraticCurveTo(x + braceW * 0.20, bottomY, outerX + 1.5 * scale, bottomY);
+      } else if (style === 2) {
+        // Fluid cursive rounded {
+        ctx.moveTo(outerX, topY + 1 * scale);
+        ctx.bezierCurveTo(x + braceW * 0.35, topY, x + braceW * 0.30, cuspY - 4 * scale, cuspX, cuspY);
+        ctx.bezierCurveTo(x + braceW * 0.30, cuspY + 4 * scale, x + braceW * 0.35, bottomY, outerX + 1 * scale, bottomY - 1 * scale);
+      } else {
+        // Classic asymmetric lobe {
+        ctx.moveTo(outerX, topY + (this.noise.random() - 0.5) * 1.5 * scale);
+        ctx.quadraticCurveTo(x + braceW * 0.25, topY + 1 * scale, x + braceW * 0.28, topY + totalH * 0.22);
+        ctx.bezierCurveTo(x + braceW * 0.28, cuspY - 3 * scale, x + braceW * 0.10, cuspY - 1 * scale, cuspX, cuspY);
+        ctx.bezierCurveTo(x + braceW * 0.10, cuspY + 2 * scale, x + braceW * 0.25, cuspY + 5 * scale, x + braceW * 0.25, topY + totalH * 0.75);
+        ctx.quadraticCurveTo(x + braceW * 0.22, bottomY - 1 * scale, outerX + 1.5 * scale, bottomY + (this.noise.random() - 0.5) * 1.5 * scale);
+      }
     } else {
-      // } Starts top left, tighter top lobe, outward beak at cusp, longer bottom lobe terminating in flick
-      ctx.moveTo(outerX, topY + (this.noise.random() - 0.5) * 1.5 * scale);
-      ctx.quadraticCurveTo(x + braceW * 0.75, topY + 1 * scale, x + braceW * 0.72, topY + totalH * 0.22);
-      ctx.bezierCurveTo(x + braceW * 0.72, cuspY - 3 * scale, x + braceW * 0.90, cuspY - 1 * scale, cuspX, cuspY);
-      ctx.bezierCurveTo(x + braceW * 0.90, cuspY + 2 * scale, x + braceW * 0.75, cuspY + 5 * scale, x + braceW * 0.75, topY + totalH * 0.75);
-      ctx.quadraticCurveTo(x + braceW * 0.78, bottomY - 1 * scale, outerX - 1.5 * scale, bottomY + (this.noise.random() - 0.5) * 1.5 * scale);
+      if (style === 1) {
+        // Rapid crisp-cusp }
+        ctx.moveTo(outerX - 1 * scale, topY);
+        ctx.quadraticCurveTo(x + braceW * 0.80, topY, x + braceW * 0.80, cuspY - 3 * scale);
+        ctx.lineTo(cuspX + 0.5 * scale, cuspY);
+        ctx.lineTo(x + braceW * 0.80, cuspY + 3 * scale);
+        ctx.quadraticCurveTo(x + braceW * 0.80, bottomY, outerX - 1.5 * scale, bottomY);
+      } else if (style === 2) {
+        // Fluid cursive rounded }
+        ctx.moveTo(outerX, topY + 1 * scale);
+        ctx.bezierCurveTo(x + braceW * 0.65, topY, x + braceW * 0.70, cuspY - 4 * scale, cuspX, cuspY);
+        ctx.bezierCurveTo(x + braceW * 0.70, cuspY + 4 * scale, x + braceW * 0.65, bottomY, outerX - 1 * scale, bottomY - 1 * scale);
+      } else {
+        // Classic asymmetric lobe }
+        ctx.moveTo(outerX, topY + (this.noise.random() - 0.5) * 1.5 * scale);
+        ctx.quadraticCurveTo(x + braceW * 0.75, topY + 1 * scale, x + braceW * 0.72, topY + totalH * 0.22);
+        ctx.bezierCurveTo(x + braceW * 0.72, cuspY - 3 * scale, x + braceW * 0.90, cuspY - 1 * scale, cuspX, cuspY);
+        ctx.bezierCurveTo(x + braceW * 0.90, cuspY + 2 * scale, x + braceW * 0.75, cuspY + 5 * scale, x + braceW * 0.75, topY + totalH * 0.75);
+        ctx.quadraticCurveTo(x + braceW * 0.78, bottomY - 1 * scale, outerX - 1.5 * scale, bottomY + (this.noise.random() - 0.5) * 1.5 * scale);
+      }
     }
     ctx.stroke();
     ctx.restore();
@@ -1760,6 +2187,8 @@ export class MathRenderer {
 
   /**
    * Procedural Absolute Value Bar |
+   * Authentic human student stroke: subtle forward slant (1° to 3.5°), organic bow (±0.8px),
+   * and natural pen tap endpoints — never a rigid CAD ruler line!
    */
   public drawAbsBar(
     ctx: CanvasRenderingContext2D,
@@ -1770,16 +2199,29 @@ export class MathRenderer {
     fontSize: number
   ): number {
     const scale = fontSize / 28;
+    const height = bottomY - topY;
+    const slantX = (0.6 + this.noise.random() * 1.6) * scale;
+    const bowX = (this.noise.random() - 0.45) * 1.2 * scale;
+    const topJitter = (this.noise.random() - 0.5) * 1.5 * scale;
+    const botJitter = (this.noise.random() - 0.5) * 1.5 * scale;
+
     ctx.save();
     ctx.strokeStyle = inkColor;
-    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
+    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95 + (this.noise.random() - 0.5) * 0.12);
     ctx.lineCap = 'round';
+
     ctx.beginPath();
-    ctx.moveTo(x + 2 * scale, topY);
-    ctx.lineTo(x + 2 * scale, bottomY);
+    ctx.moveTo(x + 2 * scale + slantX * 0.5, topY + topJitter);
+    ctx.quadraticCurveTo(
+      x + 2 * scale + bowX,
+      topY + height * 0.5,
+      x + 2 * scale - slantX * 0.5,
+      bottomY + botJitter
+    );
     ctx.stroke();
     ctx.restore();
-    return 6 * scale;
+
+    return 7 * scale;
   }
 
   /**
@@ -1801,7 +2243,7 @@ export class MathRenderer {
 
     ctx.save();
     ctx.strokeStyle = inkColor;
-    ctx.lineWidth = Math.max(1.3, 1.7 * scale);
+    ctx.lineWidth = Math.max(1.3, this.getBaseLineWidth(scale, 0.95));
     ctx.lineCap = 'round';
 
     ctx.beginPath();
@@ -1946,7 +2388,10 @@ export class MathRenderer {
 
   /**
    * Procedural Integral Symbol (\int)
-   * Top hook with ink pooling, fast thin sweep, teardrop bottom.
+   * 3 authentic human allographs with dynamic anti-duplication:
+   * - Allograph 0: Leibniz Classic Sweeping S-Curve (flowing top hook, italic stem, upward sweeping tail).
+   * - Allograph 1: Rapid Slanted Student Integral (crisp top turnaround, 10°-14° diagonal spine, compact tail).
+   * - Allograph 2: Flared Broad Student Integral (generous top lobe, wider italic curve, extended bottom sweep).
    */
   public drawIntegral(
     ctx: CanvasRenderingContext2D,
@@ -1957,50 +2402,73 @@ export class MathRenderer {
     spanLines = 1
   ): number {
     const scale = fontSize / 28;
-    const height = fontSize * (spanLines > 1 ? 1.8 * spanLines : 1.55);
-    const topY = baselineY - height * 0.72;
-    const bottomY = baselineY + height * 0.38;
+    const style = this.getNextAllograph('integral', 3);
+    const heightRatio = spanLines > 1 ? 1.8 * spanLines : (1.52 + this.noise.random() * 0.16);
+    const height = fontSize * heightRatio;
+    const topY = baselineY - height * (0.70 + this.noise.random() * 0.05);
+    const bottomY = baselineY + height * (0.34 + this.noise.random() * 0.05);
     const totalH = bottomY - topY;
-    const w = 14.5 * scale;
+    const w = (14.0 + this.noise.random() * 3.5) * scale;
     const cx = x + w * 0.45;
 
     ctx.save();
     ctx.strokeStyle = inkColor;
-    ctx.lineWidth = Math.max(1.8, 2.2 * scale);
+    ctx.lineWidth = Math.max(1.7, this.getBaseLineWidth(scale, 1.05 + (this.noise.random() - 0.5) * 0.15));
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    // Single continuous sweeping stroke for the Leibniz integral sign
     ctx.beginPath();
-    // Start at top-right hook tip
-    ctx.moveTo(cx + 6.5 * scale, topY + 4.5 * scale);
-    // Upper hook: curves up, over to the left, and sweeps into the stem
-    ctx.bezierCurveTo(
-      cx + 4.5 * scale,
-      topY - 1.2 * scale,
-      cx - 1.5 * scale,
-      topY + 0.5 * scale,
-      cx - 1.0 * scale,
-      topY + totalH * 0.22
-    );
-    // Main stem: italic downward sweep with gentle forward slant (~8-10°)
-    ctx.bezierCurveTo(
-      cx + 0.6 * scale,
-      topY + totalH * 0.45,
-      cx + 1.2 * scale,
-      topY + totalH * 0.65,
-      cx - 0.5 * scale,
-      bottomY - totalH * 0.18
-    );
-    // Lower hook: curves under and to the left
-    ctx.bezierCurveTo(
-      cx - 1.5 * scale,
-      bottomY + 1.2 * scale,
-      cx - 6.0 * scale,
-      bottomY + 0.5 * scale,
-      cx - 7.5 * scale,
-      bottomY - 3.5 * scale
-    );
+    if (style === 1) {
+      // Rapid slanted student integral (crisp turnaround, diagonal spine)
+      const topHookW = (4.5 + this.noise.random() * 2.0) * scale;
+      ctx.moveTo(cx + topHookW, topY + (3.0 + this.noise.random() * 1.5) * scale);
+      ctx.quadraticCurveTo(cx + 1.2 * scale, topY - 1.2 * scale, cx - 0.5 * scale, topY + totalH * 0.20);
+      ctx.lineTo(cx + (this.noise.random() - 0.5) * 0.8 * scale, bottomY - totalH * 0.20);
+      ctx.quadraticCurveTo(cx - 1.2 * scale, bottomY + 1.2 * scale, cx - (5.5 + this.noise.random() * 2.0) * scale, bottomY - 2.0 * scale);
+    } else if (style === 2) {
+      // Flared broad student integral (generous top lobe, wider italic curve)
+      const topHookW = (7.5 + this.noise.random() * 2.5) * scale;
+      const botHookW = (8.0 + this.noise.random() * 2.5) * scale;
+      ctx.moveTo(cx + topHookW, topY + (5.5 + this.noise.random() * 1.5) * scale);
+      ctx.bezierCurveTo(
+        cx + 5.0 * scale, topY - 2.0 * scale,
+        cx - 2.5 * scale, topY + 0.8 * scale,
+        cx - 1.5 * scale, topY + totalH * 0.25
+      );
+      ctx.bezierCurveTo(
+        cx + 1.2 * scale, topY + totalH * 0.46,
+        cx + 1.8 * scale, topY + totalH * 0.68,
+        cx - 0.6 * scale, bottomY - totalH * 0.16
+      );
+      ctx.bezierCurveTo(
+        cx - 2.0 * scale, bottomY + 1.8 * scale,
+        cx - botHookW * 0.85, bottomY + 0.8 * scale,
+        cx - botHookW, bottomY - (4.0 + this.noise.random() * 1.5) * scale
+      );
+    } else {
+      // Classic Leibniz sweeping S-curve
+      const topTipX = (6.0 + this.noise.random() * 2.2) * scale;
+      const topTipY = (4.0 + this.noise.random() * 1.5) * scale;
+      const botTipX = (7.0 + this.noise.random() * 2.0) * scale;
+      const botTipY = (3.2 + this.noise.random() * 1.5) * scale;
+
+      ctx.moveTo(cx + topTipX, topY + topTipY);
+      ctx.bezierCurveTo(
+        cx + 4.2 * scale, topY - 1.2 * scale,
+        cx - 1.6 * scale, topY + 0.5 * scale,
+        cx - 1.0 * scale, topY + totalH * 0.22
+      );
+      ctx.bezierCurveTo(
+        cx + 0.8 * scale, topY + totalH * 0.44,
+        cx + 1.4 * scale, topY + totalH * 0.66,
+        cx - 0.5 * scale, bottomY - totalH * 0.18
+      );
+      ctx.bezierCurveTo(
+        cx - 1.6 * scale, bottomY + 1.2 * scale,
+        cx - botTipX * 0.8, bottomY + 0.4 * scale,
+        cx - botTipX, bottomY - botTipY
+      );
+    }
     ctx.stroke();
 
     ctx.restore();
@@ -2009,7 +2477,7 @@ export class MathRenderer {
 
   /**
    * Procedural Square Root (\sqrt{...})
-   * Checkmark entry, upward slant, vertical drop, hand-drawn vinculum top bar with slight upward bow or overshoot.
+   * 3 radical checkmark allographs + organic vinculum bow and overshoot.
    */
   public drawSquareRoot(
     ctx: CanvasRenderingContext2D,
@@ -2019,33 +2487,45 @@ export class MathRenderer {
     contentWidth: number,
     contentHeight: number,
     fontSize: number,
-    inkColor: string
+    inkColor: string,
+    contentDescent?: number
   ): { innerX: number; totalWidth: number } {
     const scale = fontSize / 28;
-    const rootCheckWidth = 14 * scale;
+    const style = this.getNextAllograph('sqrt', 3);
+    const rootCheckWidth = (13.5 + this.noise.random() * 3.0) * scale;
     const totalHeight = Math.max(fontSize * 1.1, contentHeight + 8 * scale);
     const topY = baselineY - totalHeight + 4 * scale;
-    const bottomY = baselineY + 2 * scale;
+    const bottomY = baselineY + Math.max(2 * scale, (contentDescent ?? 0) + 2 * scale);
 
     ctx.save();
     ctx.strokeStyle = inkColor;
     ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
     ctx.lineCap = 'round';
 
-    // 1. Entry flick
     ctx.beginPath();
-    ctx.moveTo(x, baselineY - totalHeight * 0.4);
-    ctx.lineTo(x + 4 * scale, baselineY - totalHeight * 0.2);
-    // 2. Downward dip
-    ctx.lineTo(x + 7 * scale, bottomY);
-    // 3. Upward vertical/slant stem
-    ctx.lineTo(x + rootCheckWidth, topY);
+    if (style === 1) {
+      // Rapid flick checkmark
+      ctx.moveTo(x + 1 * scale, baselineY - totalHeight * 0.35);
+      ctx.lineTo(x + 5 * scale, bottomY);
+      ctx.lineTo(x + rootCheckWidth, topY);
+    } else if (style === 2) {
+      // Curved dip checkmark
+      ctx.moveTo(x, baselineY - totalHeight * 0.42);
+      ctx.quadraticCurveTo(x + 3 * scale, baselineY - totalHeight * 0.20, x + 6 * scale, bottomY);
+      ctx.lineTo(x + rootCheckWidth, topY);
+    } else {
+      // Classic checkmark
+      ctx.moveTo(x, baselineY - totalHeight * 0.40);
+      ctx.lineTo(x + 4 * scale, baselineY - totalHeight * 0.18);
+      ctx.lineTo(x + 7 * scale, bottomY);
+      ctx.lineTo(x + rootCheckWidth, topY);
+    }
     ctx.stroke();
 
-    // 4. Horizontal vinculum top bar with slight bow and overshoot
+    // Horizontal vinculum top bar with slight bow and overshoot
     const overshoot = (4 + this.noise.random() * 5) * scale;
     const vinculumEnd = x + rootCheckWidth + contentWidth + overshoot;
-    const bowY = (this.noise.random() - 0.5) * 2.5 * scale;
+    const bowY = (this.noise.random() - 0.5) * 2.0 * scale;
 
     ctx.beginPath();
     ctx.moveTo(x + rootCheckWidth, topY);
@@ -2053,14 +2533,14 @@ export class MathRenderer {
       x + rootCheckWidth + (contentWidth + overshoot) * 0.5,
       topY - bowY,
       vinculumEnd,
-      topY + (this.noise.random() - 0.5) * 2 * scale
+      topY + (this.noise.random() - 0.5) * 1.8 * scale
     );
     ctx.stroke();
 
-    // Tiny downward terminal tick at the end of vinculum (typical human math habit)
+    // Terminal downward tick
     ctx.beginPath();
     ctx.moveTo(vinculumEnd, topY);
-    ctx.lineTo(vinculumEnd, topY + 3.5 * scale);
+    ctx.lineTo(vinculumEnd, topY + (3.0 + this.noise.random() * 1.5) * scale);
     ctx.stroke();
 
     ctx.restore();
@@ -2073,12 +2553,11 @@ export class MathRenderer {
 
   /**
    * Procedural Authentic Handwritten Fraction Bar:
-   * Replaces CAD/RoughJS straight lines with a multi-point biomechanical pen stroke:
-   * - Natural wrist sag / bow in mid-span: y_mid += 0.8px - 1.8px
-   * - Organic tilt: -1.2° to +1.5°
-   * - Natural neuromuscular micro-tremor (5-point Bezier curve)
-   * - Dual-pass ballpoint ink feathering (soft fiber edge + downward pressure wall)
-   * - Asymmetric overshoot at entry and exit
+   * Controlled biomechanical pen stroke:
+   * - Natural wrist sag: maximum 0.85px in mid-span
+   * - Subtle organic tilt: controlled within ±1.0px across entire fraction
+   * - Multi-allograph velocity-tapered ballpoint stroke
+   * - Guaranteed optical clearance for surrounding text
    */
   public drawFractionBar(
     ctx: CanvasRenderingContext2D,
@@ -2090,47 +2569,41 @@ export class MathRenderer {
     inkColor: string
   ) {
     const scale = fontSize / 28;
-    // Asymmetric human overshoots: entry is 3-6px, exit is 4-8px
-    const overshootLeft = (3.5 + this.noise.random() * 3.0) * scale;
-    const overshootRight = (4.0 + this.noise.random() * 4.5) * scale;
-    const startX = x - overshootLeft;
-    const endX = x + width + overshootRight;
-    const totalLen = endX - startX;
+    const style = this.getNextAllograph('frac_bar', 3);
 
-    // Length-proportional slope (-1.6° to +2.2°) with human hand pivot
-    const slopeDeg = -1.5 + this.noise.random() * 3.4;
-    const slopeRad = (slopeDeg * Math.PI) / 180;
-    const tiltOffset = Math.tan(slopeRad) * totalLen;
-    const startY = y - tiltOffset * 0.35;
-    const endY = y + tiltOffset * 0.65;
+    // Controlled organic student tilt: maximum +-1.0px across entire fraction
+    const tiltDy = (this.noise.random() - 0.48) * 1.8 * scale;
+    const startY = y - tiltDy * 0.5;
+    const endY = y + tiltDy * 0.5;
+    const startX = x;
+    const endX = x + width;
+    const totalLen = width;
 
-    // Optical stroke weight calibrated directly to custom font stem thickness
-    const baseLineWidth = this.getBaseLineWidth(scale, 1.05);
-
-    // 16-step velocity-tapered curve with ink paste starvation
-    const steps = 16;
-    let prevX = startX;
-    let prevY = startY;
+    const baseLineWidth = this.getBaseLineWidth(scale, 1.0);
+    const steps = 14;
 
     ctx.save();
     ctx.strokeStyle = inkColor;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.shadowColor = inkColor;
-    ctx.shadowBlur = 0.40;
+    ctx.shadowBlur = 0.35;
+
+    let prevX = startX;
+    let prevY = startY;
 
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
       const curX = startX + totalLen * t;
-      // Parabolic wrist sag: dips 1.3px in center + neuromuscular micro-tremor
-      const sagY = Math.sin(Math.PI * t) * 1.35 * scale;
-      const tremor = (this.noise.random() - 0.5) * 0.8 * scale;
+      // Controlled, gentle wrist sag: maximum 0.85px in mid-span
+      const sagY = Math.sin(Math.PI * t) * (style === 1 ? 0.45 : 0.85) * scale;
+      const tremor = (this.noise.random() - 0.5) * 0.45 * scale;
       const curY = startY + (endY - startY) * t + sagY + tremor;
 
-      // Fast sweep thins out by 25% in the middle 60% of the stroke
-      const speedFactor = 1.0 - Math.sin(Math.PI * t) * 0.25;
+      // Subtle speed factor: slightly lighter in the fast middle sweep
+      const speedFactor = 1.0 - Math.sin(Math.PI * t) * 0.18;
       ctx.lineWidth = baseLineWidth * speedFactor;
-      ctx.globalAlpha = 0.90 - Math.sin(Math.PI * t) * 0.16; // lighter in middle
+      ctx.globalAlpha = 0.92 - Math.sin(Math.PI * t) * 0.10;
 
       ctx.beginPath();
       ctx.moveTo(prevX, prevY);
@@ -2307,22 +2780,128 @@ export class MathRenderer {
       return;
     }
 
-    // Default 'box': Hand-drawn rectangle with roughjs and overshooting corners
-    const pad = 8;
+    // Default 'box': Authentic student hand-drawn box with overshooting corners,
+    // natural tilt, parabolic bowing, capillary ink crossings, and organic double-pass sketch.
+    const pad = 6;
     const rx = x - pad;
     const ry = y - pad;
     const rw = width + pad * 2;
     const rh = height + pad * 2;
 
-    roughCanvas.rectangle(rx, ry, rw, rh, {
-      stroke: inkColor,
-      strokeWidth: 1.8,
-      roughness: 0.85,
-      bowing: 0.7,
-    });
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.fillStyle = inkColor;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // 1. Subtle human angular tilt (-0.7° to +0.8°)
+    const tiltAngle = (this.noise.random() - 0.45) * 0.016;
+    const centerX = rx + rw * 0.5;
+    const centerY = ry + rh * 0.5;
+
+    ctx.translate(centerX, centerY);
+    ctx.rotate(tiltAngle);
+    ctx.translate(-centerX, -centerY);
+
+    // 2. Corner Overshoots (students don't stop abruptly at corners)
+    const oTopL = 5 + this.noise.random() * 4;
+    const oTopR = 5 + this.noise.random() * 4;
+    const oBotR = 5 + this.noise.random() * 4;
+    const oBotL = 5 + this.noise.random() * 4;
+
+    const oRightT = 5 + this.noise.random() * 4;
+    const oRightB = 5 + this.noise.random() * 4;
+    const oLeftT = 5 + this.noise.random() * 4;
+    const oLeftB = 5 + this.noise.random() * 4;
+
+    const baseLineWidth = Math.max(1.5, this.getBaseLineWidth(fontSize / 28, 0.95));
+
+    // Subtle bow / midpoint wobble for each of the 4 sides
+    const bowTop = (this.noise.random() - 0.45) * 2.2;
+    const bowRight = (this.noise.random() - 0.45) * 2.2;
+    const bowBottom = (this.noise.random() - 0.45) * 2.2;
+    const bowLeft = (this.noise.random() - 0.45) * 2.2;
+
+    const x1 = rx;
+    const y1 = ry;
+    const x2 = rx + rw;
+    const y2 = ry + rh;
+
+    const drawSideStroke = (
+      sx: number, sy: number,
+      ex: number, ey: number,
+      bowX: number, bowY: number,
+      extraWidth = 0
+    ) => {
+      ctx.lineWidth = baseLineWidth + extraWidth;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      const midX = (sx + ex) * 0.5 + bowX;
+      const midY = (sy + ey) * 0.5 + bowY;
+      ctx.quadraticCurveTo(midX, midY, ex, ey);
+      ctx.stroke();
+    };
+
+    ctx.shadowColor = inkColor;
+    ctx.shadowBlur = 0.35;
+    ctx.globalAlpha = 0.88;
+
+    // Stroke 1: Top horizontal stroke (left to right)
+    drawSideStroke(
+      x1 - oTopL, y1 + (this.noise.random() - 0.5) * 1.5,
+      x2 + oTopR, y1 + (this.noise.random() - 0.5) * 1.5,
+      0, bowTop
+    );
+
+    // Stroke 2: Right vertical stroke (top to bottom)
+    drawSideStroke(
+      x2 + (this.noise.random() - 0.5) * 1.5, y1 - oRightT,
+      x2 + (this.noise.random() - 0.5) * 1.5, y2 + oRightB,
+      bowRight, 0
+    );
+
+    // Stroke 3: Bottom horizontal stroke (right to left)
+    drawSideStroke(
+      x1 - oBotL, y2 + (this.noise.random() - 0.5) * 1.5,
+      x2 + oBotR, y2 + (this.noise.random() - 0.5) * 1.5,
+      0, bowBottom
+    );
+
+    // Stroke 4: Left vertical stroke (bottom to top)
+    drawSideStroke(
+      x1 + (this.noise.random() - 0.5) * 1.5, y1 - oLeftT,
+      x1 + (this.noise.random() - 0.5) * 1.5, y2 + oLeftB,
+      bowLeft, 0
+    );
+
+    // 3. Quick partial second sketch pass on bottom or right (deliberate student reinforcement)
+    if (this.noise.random() < 0.65) {
+      ctx.globalAlpha = 0.35;
+      ctx.lineWidth = baseLineWidth * 0.72;
+      const passOffset = 1.2 + this.noise.random() * 1.3;
+      drawSideStroke(
+        x1 + 6, y2 + passOffset,
+        x2 - 4, y2 + passOffset * 0.8,
+        0, bowBottom * 0.8
+      );
+    }
+
+    // 4. Capillary ink junctions at the 4 intersection corners (darker dot where pen crossed)
+    ctx.globalAlpha = 0.45;
+    const drawCornerKnot = (cx: number, cy: number) => {
+      ctx.beginPath();
+      ctx.arc(cx, cy, baseLineWidth * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+    };
+    drawCornerKnot(x1, y1);
+    drawCornerKnot(x2, y1);
+    drawCornerKnot(x2, y2);
+    drawCornerKnot(x1, y2);
+
+    ctx.restore();
 
     if (showCheckmark) {
-      this.drawCheckmark(ctx, rx + rw + 10, ry + rh * 0.65, fontSize * 0.85, inkColor);
+      this.drawCheckmark(ctx, rx + rw + 16, ry + rh * 0.55, fontSize * 0.85, inkColor);
     } else {
       // Handwritten "Ans" label on the bottom-right corner
       const ansFontSize = Math.max(13, fontSize * 0.55);
