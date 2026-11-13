@@ -210,8 +210,8 @@ export class PageEngine {
           letterSpacing,
           wordSpacing,
           fontSize: size,
-          cursiveMode: cursiveMode ?? this.currentHandwriting?.cursiveMode ?? 'print',
-          cursiveStyle: cursiveStyle ?? this.currentHandwriting?.cursiveStyle,
+          cursiveMode: cursiveMode ?? this.currentHandwriting?.cursiveMode ?? 'vector-cursive',
+          cursiveStyle: cursiveStyle ?? this.currentHandwriting?.cursiveStyle ?? 'rushed-stem-medical',
         } as any;
         const w = this.estimateTokensWidth(font, toks, size);
         this.currentHandwriting = prevHw;

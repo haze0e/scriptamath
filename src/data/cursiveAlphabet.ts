@@ -1327,5 +1327,5 @@ export const CURSIVE_STYLE_PROFILES: Record<string, CursiveProfileConfig> = {
 };
 
 export function getCursiveProfile(style?: string): CursiveProfileConfig {
-  return CURSIVE_STYLE_PROFILES[style || 'collegiate-flow'] || CURSIVE_STYLE_PROFILES['collegiate-flow'];
+  return CURSIVE_STYLE_PROFILES[style || 'rushed-stem-medical'] || CURSIVE_STYLE_PROFILES['rushed-stem-medical'];
 }

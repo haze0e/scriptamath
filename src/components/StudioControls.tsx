@@ -198,7 +198,7 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
     deleteCustomPersona(id);
     setCustomPersonas(loadCustomPersonas());
     if (appState.handwriting.persona === id) {
-      applyPersona('chitesh-stem-notes');
+      applyPersona('rushed-medical-cursive');
     }
   };
 
@@ -680,7 +680,7 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-slate-200">Writing Style &amp; Cursive Flow</span>
                   <span className="text-[10px] font-mono text-blue-400">
-                    {(appState.handwriting.cursiveMode ?? 'semi-cursive').toUpperCase()}
+                    {(appState.handwriting.cursiveMode ?? 'vector-cursive').toUpperCase()}
                   </span>
                 </div>
                 <div className="grid grid-cols-3 gap-1.5">
@@ -698,7 +698,7 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                         }))
                       }
                       className={`p-2 rounded-lg border text-left transition-all ${
-                        (appState.handwriting.cursiveMode ?? 'semi-cursive') === mode.id
+                        (appState.handwriting.cursiveMode ?? 'vector-cursive') === mode.id
                           ? 'border-blue-500 bg-blue-950/40 text-blue-300 ring-1 ring-blue-500/60'
                           : 'border-[#262d42] bg-[#11151f] text-slate-400 hover:text-slate-200'
                       }`}
@@ -715,10 +715,10 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                       <span className="text-[11px] font-medium text-slate-300 block">Cursive Personality</span>
                       <div className="grid grid-cols-2 gap-1.5">
                         {[
+                          { id: 'rushed-stem-medical', label: 'Rushed STEM/Med', slant: 17.5 },
                           { id: 'collegiate-flow', label: 'Collegiate Flow', slant: 12 },
                           { id: 'palmer-business', label: 'Palmer Business', slant: 21 },
                           { id: 'french-grands-carreaux', label: 'French School', slant: 5 },
-                          { id: 'rushed-stem-medical', label: 'Rushed STEM/Med', slant: 17.5 },
                         ].map((st) => (
                           <button
                             key={st.id}
@@ -733,7 +733,7 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                               }))
                             }
                             className={`px-2 py-1.5 rounded-lg border text-left text-[11px] transition-colors ${
-                              (appState.handwriting.cursiveStyle ?? 'collegiate-flow') === st.id
+                              (appState.handwriting.cursiveStyle ?? 'rushed-stem-medical') === st.id
                                 ? 'border-blue-500 bg-blue-950/40 text-blue-300 font-semibold'
                                 : 'border-[#262d42] bg-[#11151f] text-slate-300 hover:text-white'
                             }`}
