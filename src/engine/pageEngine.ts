@@ -1742,7 +1742,7 @@ export class PageEngine {
       const isIsolatedVar = token.text.length === 1 && /^[a-zA-Z]$/.test(token.text) && !token.isFunction;
       const varFontSize = isIsolatedVar ? fontSize * 1.10 : fontSize;
       const varSlant = isIsolatedVar ? 5.5 : undefined;
-      const isMath = !token.isFunction;
+      const isMath = isIsolatedVar;
 
       const w = this.renderWordOrChars(
         ctx,
@@ -2105,7 +2105,8 @@ export class PageEngine {
         baseWidth = this.mathRenderer.drawLaplaceL(ctx, currX, y, fontSize, inkColor);
         currX += baseWidth;
       } else {
-        baseWidth = this.renderWordOrChars(ctx, font, base, currX, y, fontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
+        const isIsolated = base.length === 1 && /^[a-zA-Z]$/.test(base);
+        baseWidth = this.renderWordOrChars(ctx, font, base, currX, y, fontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState, undefined, isIsolated);
         currX += baseWidth;
       }
     } else {
@@ -3223,7 +3224,10 @@ export class PageEngine {
     const letterSpacing = this.currentHandwriting?.letterSpacing ?? 0;
 
     if (token.type === 'space') return fontSize * 0.48 * token.widthMultiplier * wordSpacingMult;
-    if (token.type === 'text') return this.measureWord(font, token.text, fontSize, letterSpacing, true);
+    if (token.type === 'text') {
+      const isIsolatedVar = token.text.length === 1 && /^[a-zA-Z]$/.test(token.text) && !token.isFunction;
+      return this.measureWord(font, token.text, fontSize, letterSpacing, isIsolatedVar);
+    }
     if (token.type === 'delimiter') return 10;
     if (token.type === 'operator') {
       const scale = fontSize / 28;
@@ -3281,7 +3285,7 @@ export class PageEngine {
       const bw = Array.isArray(token.base)
         ? this.estimateTokensWidth(font, token.base, fontSize)
         : typeof token.base === 'string'
-        ? this.measureWord(font, token.base, fontSize, letterSpacing, true)
+        ? this.measureWord(font, token.base, fontSize, letterSpacing, token.base.length === 1 && /^[a-zA-Z]$/.test(token.base))
         : 16;
       const isAccentSup =
         token.sup &&
