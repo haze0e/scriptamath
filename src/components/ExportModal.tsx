@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import opentype from 'opentype.js';
-import { AppState } from '../types';
+import { AppState, AllographLibrary } from '../types';
 import { PageEngine, PageLayoutData, PAGE_WIDTH, PAGE_HEIGHT } from '../engine/pageEngine';
 import { saveExportedFile } from '../lib/fileStorage';
 
@@ -23,6 +23,7 @@ interface ExportModalProps {
   appState: AppState;
   currentFont: opentype.Font | null;
   pageEngine: PageEngine;
+  allographs?: AllographLibrary;
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({
@@ -33,6 +34,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   appState,
   currentFont,
   pageEngine,
+  allographs,
 }) => {
   const isPDF = format === 'pdf';
   const defaultBaseName = appState.paper.assignmentTitle
@@ -83,7 +85,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         const offCanvas = document.createElement('canvas');
         offCanvas.width = PAGE_WIDTH;
         offCanvas.height = PAGE_HEIGHT;
-        pageEngine.renderPage(offCanvas, pagesData[i], appState, currentFont);
+        pageEngine.renderPage(offCanvas, pagesData[i], appState, currentFont, undefined, allographs);
         renderedCanvases.push(offCanvas);
 
         // Progress 10% to 75%
@@ -102,6 +104,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       } else {
         blob = await pageEngine.exportToZIP(renderedCanvases, cleanTitle);
       }
+
+      // Release offscreen canvas backing stores to prevent retaining peak memory
+      for (const c of renderedCanvases) {
+        c.width = 0;
+        c.height = 0;
+      }
+      renderedCanvases.length = 0;
 
       setProgress(95);
 

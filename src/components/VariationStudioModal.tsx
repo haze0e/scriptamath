@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import opentype from 'opentype.js';
-import { AppState, HandwritingStyleSettings, PenSettings } from '../types';
+import { AppState, HandwritingStyleSettings, PenSettings, AllographLibrary } from '../types';
 import { HANDWRITING_PERSONAS } from '../constants/personas';
 import { PageEngine, PAGE_WIDTH, PAGE_HEIGHT } from '../engine/pageEngine';
 import { parseRawAIOutput } from '../engine/formatter';
@@ -58,7 +58,7 @@ const CANDIDATES: VariationCandidate[] = [
       crossedZ: true,
       answerBubbleStyle: 'box',
       showAnswerCheckmarks: false,
-      tableLines: false,
+      tableLines: true,
     },
     penOverrides: {
       bodyColorHex: '#182b5e',
@@ -92,7 +92,7 @@ const CANDIDATES: VariationCandidate[] = [
       crossedZ: true,
       answerBubbleStyle: 'box',
       showAnswerCheckmarks: false,
-      tableLines: false,
+      tableLines: true,
     },
     penOverrides: {
       bodyColorHex: '#1e3a8a',
@@ -125,7 +125,7 @@ const CANDIDATES: VariationCandidate[] = [
       crossedZ: false,
       answerBubbleStyle: 'oval',
       showAnswerCheckmarks: true,
-      tableLines: false,
+      tableLines: true,
     },
     penOverrides: {
       bodyColorHex: '#1d4ed8',
@@ -159,7 +159,7 @@ const CANDIDATES: VariationCandidate[] = [
       crossedZ: true,
       answerBubbleStyle: 'box',
       showAnswerCheckmarks: false,
-      tableLines: false,
+      tableLines: true,
     },
     penOverrides: {
       bodyColorHex: '#1e293b',
@@ -181,6 +181,7 @@ interface VariationStudioModalProps {
     pen: Partial<PenSettings>;
     randomSeed: number;
   }) => void;
+  allographs?: AllographLibrary;
 }
 
 export const VariationStudioModal: React.FC<VariationStudioModalProps> = ({
@@ -189,6 +190,7 @@ export const VariationStudioModal: React.FC<VariationStudioModalProps> = ({
   appState,
   currentPageIdx,
   onAdoptVariation,
+  allographs,
 }) => {
   const [renderedPreviews, setRenderedPreviews] = useState<{ [id: string]: string }>({});
   const [isGenerating, setIsGenerating] = useState(false);
@@ -235,14 +237,21 @@ export const VariationStudioModal: React.FC<VariationStudioModalProps> = ({
 
             // Load font (cached)
             const font = await loadFontById(candidate.fontFamily);
-            const paginated = candidateEngine.paginate(blocks);
+            const paginated = candidateEngine.paginate(
+              blocks,
+              candidateState.handwriting.fontSize,
+              candidateState.paper.roughWorkColumn,
+              candidateState.handwriting.letterSpacing,
+              candidateState.handwriting.wordSpacing,
+              font
+            );
             const pageData = paginated[Math.min(currentPageIdx, paginated.length - 1)];
 
             if (pageData && font && !isCancelledRef.current) {
               const canvas = document.createElement('canvas');
               canvas.width = PAGE_WIDTH;
               canvas.height = PAGE_HEIGHT;
-              candidateEngine.renderPage(canvas, pageData, candidateState, font);
+              candidateEngine.renderPage(canvas, pageData, candidateState, font, undefined, allographs);
 
               const previewUrl = canvas.toDataURL('image/jpeg', 0.82);
               if (!isCancelledRef.current) {
@@ -265,7 +274,7 @@ export const VariationStudioModal: React.FC<VariationStudioModalProps> = ({
     return () => {
       isCancelledRef.current = true;
     };
-  }, [isOpen, appState.rawInput, appState.handwriting.randomSeed, currentPageIdx]);
+  }, [isOpen, appState.rawInput, appState.handwriting.randomSeed, currentPageIdx, allographs]);
 
   const handleAdopt = (candidate: VariationCandidate) => {
     const candidateSeed = (appState.handwriting.randomSeed + candidate.seedOffset) % 1000000;
@@ -431,7 +440,7 @@ export const VariationStudioModal: React.FC<VariationStudioModalProps> = ({
       {/* Enlarged Lightbox Modal */}
       {enlargedCandidate && (
         <div
-          className="fixed inset-0 z-60 bg-black/90 backdrop-blur-lg flex items-center justify-center p-6 animate-fade-in"
+          className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-lg flex items-center justify-center p-6 animate-fade-in"
           onClick={() => setEnlargedCandidate(null)}
         >
           <div className="relative max-w-3xl max-h-[92vh] flex flex-col items-center">

@@ -267,7 +267,7 @@ export function createPersonaFromBiometrics(
       scratchOutRate: analysis.humanVariance > 7 ? 0.008 : 0.002,
       humanVariance: analysis.humanVariance,
       crossedZ: true,
-      tableLines: false,
+      tableLines: true,
       answerBubbleStyle: 'box',
       showAnswerCheckmarks: analysis.slantAngle < 6,
     },

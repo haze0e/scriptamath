@@ -33,7 +33,10 @@ dist/
 .env.local
 .env.*.local
 
-# macOS files
+# Local notes and audit bundles
+IMPORVEMTN.txt
+scriptamath_codebase_bundle.txt
+
 .DS_Store
 .AppleDouble
 .LSOverride

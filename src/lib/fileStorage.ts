@@ -50,6 +50,15 @@ export async function saveExportedFile(
 
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, 'readwrite');
+    transaction.oncomplete = () => db.close();
+    transaction.onerror = () => {
+      db.close();
+      reject(transaction.error);
+    };
+    transaction.onabort = () => {
+      db.close();
+      reject(transaction.error || new Error('IndexedDB transaction aborted'));
+    };
     const store = transaction.objectStore(STORE_NAME);
     const request = store.add(file);
 
@@ -62,6 +71,15 @@ export async function getAllExportedFiles(): Promise<StoredFile[]> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, 'readonly');
+    transaction.oncomplete = () => db.close();
+    transaction.onerror = () => {
+      db.close();
+      reject(transaction.error);
+    };
+    transaction.onabort = () => {
+      db.close();
+      reject(transaction.error || new Error('IndexedDB transaction aborted'));
+    };
     const store = transaction.objectStore(STORE_NAME);
     const request = store.getAll();
 
@@ -78,6 +96,15 @@ export async function deleteExportedFile(id: string): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE_NAME, 'readwrite');
+    transaction.oncomplete = () => db.close();
+    transaction.onerror = () => {
+      db.close();
+      reject(transaction.error);
+    };
+    transaction.onabort = () => {
+      db.close();
+      reject(transaction.error || new Error('IndexedDB transaction aborted'));
+    };
     const store = transaction.objectStore(STORE_NAME);
     const request = store.delete(id);
 

@@ -123,7 +123,7 @@ For the underdamped regime where $\\omega_0 > \\gamma$, we define the damped fre
 $$x(t) = A e^{-\\gamma t} \\cos(\\omega_d t + \\phi)$$
 
 Applying the initial conditions $x(0) = x_0$ and $v(0) = 0$:
-$$\\boxed{x(t) = x_0 e^{-\\gamma t} \\left( \\cos(\\omega_d t) + \\frac{\\gamma}{\\omega_d} \\sin(\\omega_d t) \\right)}$$
+$$\\therefore x(t) = x_0 e^{-\\gamma t} \\left( \\cos(\\omega_d t) + \\frac{\\gamma}{\\omega_d} \\sin(\\omega_d t) \\right)$$
 
 [ROUGH_WORK]
 k/m = 160 / 2.5 = 64

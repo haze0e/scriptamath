@@ -57,10 +57,11 @@ Transform the following raw textbook/assignment text into authentic, natural stu
 
 Strict Formatting Guidelines:
 1. Rephrase stiff textbook explanations into natural student phrasing (e.g. "Substituting eq. 1 into eq. 2", "Simplifying the numerator:", "Hence:").
-2. Write all math formulas in standard inline $...$ or block $$...$$ LaTeX (e.g. fractions \\frac{a}{b}, roots \\sqrt{x}, matrices, or boxed final answers \\boxed{...}).
-3. In [ROUGH_WORK], output 3 to 6 authentic intermediate scratch calculations (algebraic steps, arithmetic checks, square roots, multiplications).
-4. Provide a short margin note for the notebook gutter (e.g., "Problem 3(b) - Due Friday").
-5. Return ONLY the response in this exact format (no conversational greeting):
+2. Write all math formulas in standard inline $...$ or block $$...$$ LaTeX (e.g. fractions \\frac{a}{b}, roots \\sqrt{x}, matrices).
+3. NO BOXED ANSWERS: DO NOT wrap final answers in a box (do NOT use \\boxed{...}). Rigid boxes look unnatural and artificial in student handwriting. Instead, conclude naturally with "Hence:", "Therefore,", "Ans:", or standard notation (e.g., \\therefore x = ...).
+4. In [ROUGH_WORK], output 3 to 6 authentic intermediate scratch calculations (algebraic steps, arithmetic checks, square roots, multiplications).
+5. Provide a short margin note for the notebook gutter (e.g., "Problem 3(b) - Due Friday").
+6. Return ONLY the response in this exact format (no conversational greeting):
 
 [METADATA]
 Title: ${assignmentTitle || 'STEM Homework Solution'}

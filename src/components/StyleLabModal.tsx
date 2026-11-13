@@ -43,6 +43,7 @@ export const StyleLabModal: React.FC<StyleLabModalProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
+  const isDrawingRef = useRef(false);
   const [strokes, setStrokes] = useState<RawStroke[]>([]);
   const currentStrokeRef = useRef<RawStroke>([]);
   const [activePrompt, setActivePrompt] = useState(SAMPLE_PROMPTS[0]);
@@ -62,12 +63,15 @@ export const StyleLabModal: React.FC<StyleLabModalProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const width = canvas.width;
-    const height = canvas.height;
+    const dpr = window.devicePixelRatio || 1;
+    const width = canvas.width / dpr;
+    const height = canvas.height / dpr;
+
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
-    // Draw subtle guide lines for user reference
-    ctx.save();
+    // Draw subtle guide lines in CSS coordinate space
     ctx.strokeStyle = '#1e2638';
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
@@ -84,14 +88,12 @@ export const StyleLabModal: React.FC<StyleLabModalProps> = ({
     ctx.moveTo(30, ascenderY);
     ctx.lineTo(width - 30, ascenderY);
     ctx.stroke();
-
-    ctx.restore();
+    ctx.setLineDash([]);
 
     // Render strokes with smooth Bezier interpolation
     for (const stroke of strokes) {
       if (stroke.length < 2) continue;
 
-      ctx.save();
       ctx.strokeStyle = inkColor;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
@@ -108,11 +110,11 @@ export const StyleLabModal: React.FC<StyleLabModalProps> = ({
         ctx.lineTo(p2.x, p2.y);
         ctx.stroke();
       }
-      ctx.restore();
     }
+    ctx.restore();
   }, [strokes, inkColor]);
 
-  // Handle high-DPI canvas setup on mount or resize
+  // Initialize canvas dimensions ONLY when modal opens
   useEffect(() => {
     if (!isOpen) return;
 
@@ -122,14 +124,15 @@ export const StyleLabModal: React.FC<StyleLabModalProps> = ({
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
 
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
+    canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+    canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+    redrawCanvas();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.scale(dpr, dpr);
-    }
-
+  // Redraw whenever strokes or inkColor change without reallocating canvas backing store
+  useEffect(() => {
+    if (!isOpen) return;
     redrawCanvas();
   }, [isOpen, redrawCanvas]);
 
@@ -139,6 +142,7 @@ export const StyleLabModal: React.FC<StyleLabModalProps> = ({
     if (!canvas) return;
 
     canvas.setPointerCapture(e.pointerId);
+    isDrawingRef.current = true;
     setIsDrawing(true);
 
     const rect = canvas.getBoundingClientRect();
@@ -151,7 +155,7 @@ export const StyleLabModal: React.FC<StyleLabModalProps> = ({
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
+    if (!isDrawingRef.current) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -166,7 +170,9 @@ export const StyleLabModal: React.FC<StyleLabModalProps> = ({
       const pLast = currentStroke[currentStroke.length - 1];
       const ctx = canvas.getContext('2d');
       if (ctx) {
+        const dpr = window.devicePixelRatio || 1;
         ctx.save();
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.strokeStyle = inkColor;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
@@ -183,7 +189,8 @@ export const StyleLabModal: React.FC<StyleLabModalProps> = ({
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
+    if (!isDrawingRef.current) return;
+    isDrawingRef.current = false;
     setIsDrawing(false);
 
     try {
@@ -304,6 +311,7 @@ export const StyleLabModal: React.FC<StyleLabModalProps> = ({
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
               className="w-full h-[200px] cursor-crosshair touch-none"
               style={{ width: '100%', height: '200px' }}
             />

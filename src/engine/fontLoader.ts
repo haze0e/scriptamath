@@ -77,6 +77,19 @@ export const BUILTIN_FONTS: BuiltinFontInfo[] = [
   { id: 'Mansalva', name: 'Mansalva', category: 'Fast & Scratch', styleTag: 'Neutral', description: 'Freehand expressive ink', url: '/fonts/Mansalva.ttf' },
 ];
 
+async function registerBrowserFontFace(familyName: string, source: string | ArrayBuffer): Promise<void> {
+  if (typeof window === 'undefined' || !('FontFace' in window)) return;
+  try {
+    const cleanFamily = `"${familyName.replace(/["\\]/g, '')}"`;
+    const srcArg = typeof source === 'string' ? `url("${encodeURI(source)}")` : source;
+    const face = new FontFace(cleanFamily, srcArg);
+    const loadedFace = await face.load();
+    document.fonts.add(loadedFace);
+  } catch {
+    // Non-fatal if browser FontFace registration fails
+  }
+}
+
 export async function loadFontById(fontId: string, customUrl?: string): Promise<opentype.Font> {
   const cacheKey = customUrl || fontId;
   if (fontCache.has(cacheKey)) {
@@ -86,18 +99,25 @@ export async function loadFontById(fontId: string, customUrl?: string): Promise<
   let url = customUrl;
   if (!url) {
     const builtin = BUILTIN_FONTS.find((f) => f.id === fontId);
-    url = builtin ? builtin.url : BUILTIN_FONTS[0].url;
+    url = builtin ? builtin.url : '/fonts/Caveat.ttf';
   }
 
   return new Promise((resolve, reject) => {
     opentype.load(url!, (err, font) => {
       if (err || !font) {
         console.error('Failed to load font from URL:', url, err);
-        // Fallback to Caveat
         if (url !== '/fonts/Caveat.ttf') {
+          if (fontCache.has('Caveat')) {
+            const cachedFallback = fontCache.get('Caveat')!;
+            fontCache.set(cacheKey, cachedFallback);
+            resolve(cachedFallback);
+            return;
+          }
           opentype.load('/fonts/Caveat.ttf', (fallbackErr, fallbackFont) => {
             if (fallbackFont) {
+              fontCache.set('Caveat', fallbackFont);
               fontCache.set(cacheKey, fallbackFont);
+              void registerBrowserFontFace('Caveat', '/fonts/Caveat.ttf');
               resolve(fallbackFont);
             } else {
               reject(fallbackErr);
@@ -108,6 +128,7 @@ export async function loadFontById(fontId: string, customUrl?: string): Promise<
         }
       } else {
         fontCache.set(cacheKey, font);
+        void registerBrowserFontFace(fontId, url!);
         resolve(font);
       }
     });
@@ -117,5 +138,6 @@ export async function loadFontById(fontId: string, customUrl?: string): Promise<
 export async function loadFontFromArrayBuffer(buffer: ArrayBuffer, name = 'custom'): Promise<opentype.Font> {
   const font = opentype.parse(buffer);
   fontCache.set(name, font);
+  await registerBrowserFontFace(name, buffer);
   return font;
 }

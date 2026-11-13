@@ -69,6 +69,9 @@ class WritingAudioSynthesizer {
 
   public setMuted(muted: boolean) {
     this.isMuted = muted;
+    if (this.masterGain && this.ctx) {
+      this.masterGain.gain.setValueAtTime(muted ? 0 : 0.25, this.ctx.currentTime);
+    }
   }
 
   public getMuted(): boolean {
@@ -79,13 +82,16 @@ class WritingAudioSynthesizer {
    * Plays a physical writing stroke sound matched to pen type
    */
   public playStrokeSound(penStyle: PenStyle = 'ballpoint', intensity = 1.0) {
-    if (this.isMuted) return;
+    if (this.isMuted || intensity <= 0) return;
     if (!this.initContext() || !this.ctx || !this.masterGain) return;
+    // Do not allocate and queue nodes if AudioContext is still suspended by browser autoplay policy
+    if (this.ctx.state !== 'running') return;
 
     const grainBuffer = this.noiseBuffers.get('grain');
     if (!grainBuffer) return;
 
     const now = this.ctx.currentTime;
+    const safeIntensity = Math.max(0.01, intensity);
 
     // Stroke duration between 40ms and 110ms with natural variation
     const strokeDuration = 0.04 + Math.random() * 0.07;
@@ -107,21 +113,21 @@ class WritingAudioSynthesizer {
       filter.frequency.setValueAtTime(2800 + (Math.random() - 0.5) * 600, now);
       filter.Q.setValueAtTime(4.2, now);
       gainNode.gain.setValueAtTime(0.001, now);
-      gainNode.gain.linearRampToValueAtTime(0.35 * intensity, now + 0.01);
+      gainNode.gain.linearRampToValueAtTime(Math.max(0.002, 0.35 * safeIntensity), now + 0.01);
       gainNode.gain.exponentialRampToValueAtTime(0.001, now + strokeDuration);
     } else if (penStyle === 'gel') {
       // Smooth rollerball ink glide with muffled friction
       filter.frequency.setValueAtTime(1600 + (Math.random() - 0.5) * 400, now);
       filter.Q.setValueAtTime(2.0, now);
       gainNode.gain.setValueAtTime(0.001, now);
-      gainNode.gain.linearRampToValueAtTime(0.22 * intensity, now + 0.01);
+      gainNode.gain.linearRampToValueAtTime(Math.max(0.002, 0.22 * safeIntensity), now + 0.01);
       gainNode.gain.exponentialRampToValueAtTime(0.001, now + strokeDuration);
     } else {
       // Standard ballpoint / pencil graphite resistance
       filter.frequency.setValueAtTime(2200 + (Math.random() - 0.5) * 500, now);
       filter.Q.setValueAtTime(3.0, now);
       gainNode.gain.setValueAtTime(0.001, now);
-      gainNode.gain.linearRampToValueAtTime(0.28 * intensity, now + 0.012);
+      gainNode.gain.linearRampToValueAtTime(Math.max(0.002, 0.28 * safeIntensity), now + 0.012);
       gainNode.gain.exponentialRampToValueAtTime(0.001, now + strokeDuration);
     }
 
@@ -129,6 +135,12 @@ class WritingAudioSynthesizer {
     source.connect(filter);
     filter.connect(gainNode);
     gainNode.connect(this.masterGain);
+
+    source.onended = () => {
+      source.disconnect();
+      filter.disconnect();
+      gainNode.disconnect();
+    };
 
     source.start(now, Math.max(0, randomOffset), strokeDuration);
   }

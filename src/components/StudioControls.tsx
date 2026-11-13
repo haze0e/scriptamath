@@ -33,6 +33,7 @@ import {
   CustomPersonaProfile,
 } from '../types';
 import { BUILTIN_FONTS, FontCategory } from '../engine/fontLoader';
+import { extractStructuredPromptSections } from '../engine/formatter';
 import { SAMPLE_ASSIGNMENTS } from '../data/samples';
 import {
   HANDWRITING_PERSONAS,
@@ -214,6 +215,7 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
       }
     };
     reader.readAsArrayBuffer(file);
+    e.target.value = '';
   };
 
   const insertSnippet = (snippet: string) => {
@@ -226,12 +228,20 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
   const loadSample = (sampleId: string) => {
     const sample = SAMPLE_ASSIGNMENTS.find((s) => s.id === sampleId);
     if (!sample) return;
+    const structured = extractStructuredPromptSections(sample.content);
     setAppState((prev) => ({
       ...prev,
       rawInput: sample.content,
       paper: {
         ...prev.paper,
-        assignmentTitle: sample.title,
+        assignmentTitle: structured.title || sample.title,
+        dateStr: structured.dateStr || prev.paper.dateStr,
+        marginAnnotation: structured.marginNote || '',
+        roughWorkColumn: structured.roughWork.length > 0,
+        customRoughWork:
+          structured.roughWork.length > 0
+            ? structured.roughWork
+            : ['14 · 6 = 84', '84 - 23 = 61', '√61 ≈ 7.81'],
       },
     }));
   };
@@ -373,10 +383,10 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
               </div>
               <div className="relative">
                 <select
+                  value=""
                   onChange={(e) => {
                     if (e.target.value) loadSample(e.target.value);
                   }}
-                  defaultValue=""
                   className="w-full bg-[#11151f] hover:bg-[#161c2b] border border-[#262d42] focus:border-blue-500 rounded-lg px-3 py-2 text-xs text-slate-200 cursor-pointer appearance-none transition-colors pr-8 font-medium"
                 >
                   <option value="" disabled>
@@ -652,6 +662,66 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                     );
                   })}
                 </div>
+              </div>
+
+              {/* Writing Register & Cursive Mode Selector */}
+              <div className="bg-[#181d2a] p-3.5 rounded-xl border border-[#262d42] space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-200">Writing Style &amp; Cursive Flow</span>
+                  <span className="text-[10px] font-mono text-blue-400">
+                    {(appState.handwriting.cursiveMode ?? 'semi-cursive').toUpperCase()}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { id: 'print', label: 'Clean Print', desc: 'Disconnected letters' },
+                    { id: 'semi-cursive', label: 'Semi-Cursive', desc: 'TTF + ligature bridges' },
+                    { id: 'vector-cursive', label: 'True Cursive', desc: 'Unbroken word splines' },
+                  ].map((mode) => (
+                    <button
+                      key={mode.id}
+                      onClick={() =>
+                        setAppState((p) => ({
+                          ...p,
+                          handwriting: { ...p.handwriting, cursiveMode: mode.id as any },
+                        }))
+                      }
+                      className={`p-2 rounded-lg border text-left transition-all ${
+                        (appState.handwriting.cursiveMode ?? 'semi-cursive') === mode.id
+                          ? 'border-blue-500 bg-blue-950/40 text-blue-300 ring-1 ring-blue-500/60'
+                          : 'border-[#262d42] bg-[#11151f] text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <div className="text-[11px] font-semibold">{mode.label}</div>
+                      <div className="text-[9px] text-slate-400">{mode.desc}</div>
+                    </button>
+                  ))}
+                </div>
+
+                {appState.handwriting.cursiveMode === 'vector-cursive' && (
+                  <div className="pt-2 border-t border-[#222a3d] space-y-1.5 animate-fade-in">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-300">Nib Up/Down Pressure Contrast</span>
+                      <span className="font-mono text-blue-400">
+                        {Math.round((appState.handwriting.cursivePressureContrast ?? 0.60) * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={appState.handwriting.cursivePressureContrast ?? 0.60}
+                      onChange={(e) =>
+                        setAppState((p) => ({
+                          ...p,
+                          handwriting: { ...p.handwriting, cursivePressureContrast: parseFloat(e.target.value) },
+                        }))
+                      }
+                      className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg cursor-pointer"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* 2. Master Human Variance Bias Slider */}
@@ -1017,7 +1087,7 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                         onChange={(e) =>
                           setAppState((p) => ({
                             ...p,
-                            handwriting: { ...p.handwriting, loopWarp: parseFloat(e.target.value) },
+                            handwriting: { ...p.handwriting, loopWarp: parseFloat(e.target.value), humanVariance: undefined },
                           }))
                         }
                         className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg cursor-pointer"
@@ -1041,7 +1111,7 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                         onChange={(e) =>
                           setAppState((p) => ({
                             ...p,
-                            handwriting: { ...p.handwriting, ligatureRate: parseFloat(e.target.value) },
+                            handwriting: { ...p.handwriting, ligatureRate: parseFloat(e.target.value), humanVariance: undefined },
                           }))
                         }
                         className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg cursor-pointer"
@@ -1065,7 +1135,7 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                         onChange={(e) =>
                           setAppState((p) => ({
                             ...p,
-                            handwriting: { ...p.handwriting, flyingDotChaos: parseFloat(e.target.value) },
+                            handwriting: { ...p.handwriting, flyingDotChaos: parseFloat(e.target.value), humanVariance: undefined },
                           }))
                         }
                         className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg cursor-pointer"
@@ -1122,7 +1192,7 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                         onChange={(e) =>
                           setAppState((p) => ({
                             ...p,
-                            handwriting: { ...p.handwriting, slantAngle: parseInt(e.target.value, 10) },
+                            handwriting: { ...p.handwriting, slantAngle: parseInt(e.target.value, 10), humanVariance: undefined },
                           }))
                         }
                         className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg cursor-pointer"
@@ -1147,7 +1217,7 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                           onChange={(e) =>
                             setAppState((p) => ({
                               ...p,
-                              handwriting: { ...p.handwriting, baselineWave: parseFloat(e.target.value) },
+                              handwriting: { ...p.handwriting, baselineWave: parseFloat(e.target.value), humanVariance: undefined },
                             }))
                           }
                           className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg"
@@ -1170,7 +1240,7 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                           onChange={(e) =>
                             setAppState((p) => ({
                               ...p,
-                              handwriting: { ...p.handwriting, intraWordVelocity: parseFloat(e.target.value) },
+                              handwriting: { ...p.handwriting, intraWordVelocity: parseFloat(e.target.value), humanVariance: undefined },
                             }))
                           }
                           className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg"
@@ -1196,7 +1266,7 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                           onChange={(e) =>
                             setAppState((p) => ({
                               ...p,
-                              handwriting: { ...p.handwriting, marginSqueezeRate: parseFloat(e.target.value) },
+                              handwriting: { ...p.handwriting, marginSqueezeRate: parseFloat(e.target.value), humanVariance: undefined },
                             }))
                           }
                           className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg"
@@ -1219,7 +1289,7 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                           onChange={(e) =>
                             setAppState((p) => ({
                               ...p,
-                              handwriting: { ...p.handwriting, scratchOutRate: parseFloat(e.target.value) },
+                              handwriting: { ...p.handwriting, scratchOutRate: parseFloat(e.target.value), humanVariance: undefined },
                             }))
                           }
                           className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg"
@@ -1245,7 +1315,7 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                           onChange={(e) =>
                             setAppState((p) => ({
                               ...p,
-                              handwriting: { ...p.handwriting, marginWander: parseFloat(e.target.value) },
+                              handwriting: { ...p.handwriting, marginWander: parseFloat(e.target.value), humanVariance: undefined },
                             }))
                           }
                           className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg"
@@ -1268,7 +1338,7 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                           onChange={(e) =>
                             setAppState((p) => ({
                               ...p,
-                              handwriting: { ...p.handwriting, handFatigue: parseFloat(e.target.value) },
+                              handwriting: { ...p.handwriting, handFatigue: parseFloat(e.target.value), humanVariance: undefined },
                             }))
                           }
                           className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg"
@@ -1364,7 +1434,7 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
               <label className="flex items-start gap-2 bg-[#11151f] p-2.5 rounded-lg border border-[#262d42] cursor-pointer hover:bg-[#181f2f]">
                 <input
                   type="checkbox"
-                  checked={appState.handwriting.tableLines ?? false}
+                  checked={appState.handwriting.tableLines ?? true}
                   onChange={(e) =>
                     setAppState((p) => ({
                       ...p,
@@ -1378,16 +1448,16 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                     <span className="text-xs font-medium text-slate-200">Table Separation Grid Lines</span>
                     <span
                       className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-medium ${
-                        appState.handwriting.tableLines
+                        (appState.handwriting.tableLines ?? true)
                           ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
                           : 'bg-slate-800 text-slate-400 border border-slate-700'
                       }`}
                     >
-                      {appState.handwriting.tableLines ? 'ON' : 'OFF (Clean Tabulation)'}
+                      {(appState.handwriting.tableLines ?? true) ? 'ON' : 'OFF (Clean Tabulation)'}
                     </span>
                   </div>
                   <div className="text-[10px] text-slate-400">
-                    When off (default), tables are naturally tabulated in aligned columns without separation lines.
+                    When on (default), tables render authentic hand-drawn grid lines and borders. When off, tables are tabulated in aligned columns without separation lines.
                   </div>
                 </div>
               </label>
@@ -1423,6 +1493,129 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                   </div>
                 </div>
               </label>
+
+              {/* Snap Baselines to Ruled Lines */}
+              <label className="flex items-start gap-2 bg-[#11151f] p-2.5 rounded-lg border border-[#262d42] cursor-pointer hover:bg-[#181f2f]">
+                <input
+                  type="checkbox"
+                  checked={appState.handwriting.snapToRuledLines ?? true}
+                  onChange={(e) =>
+                    setAppState((p) => ({
+                      ...p,
+                      handwriting: { ...p.handwriting, snapToRuledLines: e.target.checked },
+                    }))
+                  }
+                  className="mt-0.5 rounded text-blue-500 focus:ring-0"
+                />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-slate-200">Snap Baselines to Ruled Lines</span>
+                    <span
+                      className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-medium ${
+                        (appState.handwriting.snapToRuledLines ?? true)
+                          ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                          : 'bg-slate-800 text-slate-400 border border-slate-700'
+                      }`}
+                    >
+                      {(appState.handwriting.snapToRuledLines ?? true) ? 'ON' : 'OFF'}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    Aligns derivation steps and text onto ruled lines on lined paper templates, preventing mid-air line drift.
+                  </div>
+                </div>
+              </label>
+
+              {/* Opposing-Crescent Cursive Math 'x' )()( */}
+              <label className="flex items-start gap-2 bg-[#11151f] p-2.5 rounded-lg border border-[#262d42] cursor-pointer hover:bg-[#181f2f]">
+                <input
+                  type="checkbox"
+                  checked={appState.handwriting.cursiveMathX ?? true}
+                  onChange={(e) =>
+                    setAppState((p) => ({
+                      ...p,
+                      handwriting: { ...p.handwriting, cursiveMathX: e.target.checked },
+                    }))
+                  }
+                  className="mt-0.5 rounded text-blue-500 focus:ring-0"
+                />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-slate-200">Cursive Opposing-Crescent Math &apos;x&apos; )()(</span>
+                    <span
+                      className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-medium ${
+                        (appState.handwriting.cursiveMathX ?? true)
+                          ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                          : 'bg-slate-800 text-slate-400 border border-slate-700'
+                      }`}
+                    >
+                      {(appState.handwriting.cursiveMathX ?? true) ? 'ON' : 'OFF'}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    Renders algebraic variable &apos;x&apos; as authentic curved opposing crescents )()( instead of typed cross &apos;×&apos;.
+                  </div>
+                </div>
+              </label>
+
+              {/* Delayed 'i'/'j' Dots & 't' Crossbars */}
+              <label className="flex items-start gap-2 bg-[#11151f] p-2.5 rounded-lg border border-[#262d42] cursor-pointer hover:bg-[#181f2f]">
+                <input
+                  type="checkbox"
+                  checked={appState.handwriting.delayedCrossAndDot ?? true}
+                  onChange={(e) =>
+                    setAppState((p) => ({
+                      ...p,
+                      handwriting: { ...p.handwriting, delayedCrossAndDot: e.target.checked },
+                    }))
+                  }
+                  className="mt-0.5 rounded text-blue-500 focus:ring-0"
+                />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-slate-200">Delayed &apos;i&apos;/&apos;j&apos; Dots &amp; &apos;t&apos; Crossbars</span>
+                    <span
+                      className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-medium ${
+                        (appState.handwriting.delayedCrossAndDot ?? true)
+                          ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                          : 'bg-slate-800 text-slate-400 border border-slate-700'
+                      }`}
+                    >
+                      {(appState.handwriting.delayedCrossAndDot ?? true) ? 'ON' : 'OFF'}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    Delays tittles and crossbars until word strokes complete, adding authentic flying momentum.
+                  </div>
+                </div>
+              </label>
+
+              {/* Caret '^' Supralinear Insertions */}
+              <div className="bg-[#11151f] p-2.5 rounded-lg border border-[#262d42] space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-medium text-slate-200">Caret (&apos;^&apos;) Supralinear Insertions</span>
+                  <span className="font-mono text-blue-400">
+                    {Math.round((appState.handwriting.caretInsertionRate ?? 0.012) * 1000) / 10}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="0.04"
+                  step="0.004"
+                  value={appState.handwriting.caretInsertionRate ?? 0.012}
+                  onChange={(e) =>
+                    setAppState((p) => ({
+                      ...p,
+                      handwriting: { ...p.handwriting, caretInsertionRate: parseFloat(e.target.value) },
+                    }))
+                  }
+                  className="w-full accent-blue-500 h-1.5 bg-[#1f2536] rounded-lg cursor-pointer"
+                />
+                <div className="text-[10px] text-slate-400">
+                  Simulates student corrections where forgotten words are inserted above a hand-drawn caret &apos;^&apos;.
+                </div>
+              </div>
             </div>
           </div>
         );
@@ -1446,6 +1639,7 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                         showMarginGuides: false,
                         showPaperTexture: false,
                         roughWorkColumn: false,
+                        spiralHoles: false,
                         shadowIntensity: 0.10,
                         perspectiveTilt: 0.0,
                         inkBleed: 0.0,
@@ -1480,6 +1674,7 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                         showMarginGuides: true,
                         showPaperTexture: true,
                         roughWorkColumn: false,
+                        spiralHoles: false,
                         shadowIntensity: 0.28,
                       },
                       pen: {
@@ -1650,7 +1845,34 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
               </div>
 
               {appState.paper.roughWorkColumn && (
-                <div className="pt-2 border-t border-[#262d42] space-y-1">
+                <div className="pt-2 border-t border-[#262d42] space-y-2">
+                  <div className="flex items-center justify-between pt-1 pb-1">
+                    <span className="text-[11px] text-slate-300">Rough Work Instrument</span>
+                    <div className="flex gap-1.5">
+                      {[
+                        { id: 'pen', label: 'Ballpoint Pen' },
+                        { id: 'pencil', label: 'Graphite Pencil' },
+                      ].map((inst) => (
+                        <button
+                          key={inst.id}
+                          onClick={() =>
+                            setAppState((p) => ({
+                              ...p,
+                              paper: { ...p.paper, roughWorkInstrument: inst.id as 'pen' | 'pencil' },
+                            }))
+                          }
+                          className={`px-2.5 py-0.5 rounded text-[11px] border transition-colors ${
+                            (appState.paper.roughWorkInstrument ?? 'pencil') === inst.id
+                              ? 'bg-blue-600 border-blue-500 text-white font-medium'
+                              : 'bg-[#11151f] border-[#262d42] text-slate-300 hover:text-white'
+                          }`}
+                        >
+                          {inst.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <label className="text-[11px] text-slate-400 block">
                     Scratch Math Lines (one per line)
                   </label>
@@ -1663,7 +1885,19 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                         ...p,
                         paper: {
                           ...p.paper,
-                          customRoughWork: e.target.value.split('\n').filter((l) => l.trim().length > 0),
+                          customRoughWork: e.target.value.split('\n'),
+                        },
+                      }))
+                    }
+                    onBlur={(e) =>
+                      setAppState((p) => ({
+                        ...p,
+                        paper: {
+                          ...p.paper,
+                          customRoughWork: e.target.value
+                            .split('\n')
+                            .map((l) => l.trim())
+                            .filter((l) => l.length > 0),
                         },
                       }))
                     }
@@ -1727,7 +1961,11 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                         onClick={() =>
                           setAppState((p) => ({
                             ...p,
-                            pen: { ...p.pen, headingColorHex: col.hex },
+                            pen: {
+                              ...p.pen,
+                              headingColorPreset: col.id as HeadingColorPreset,
+                              headingColorHex: col.hex,
+                            },
                           }))
                         }
                         className={`w-7 h-7 rounded-lg border flex items-center justify-center transition-all ${

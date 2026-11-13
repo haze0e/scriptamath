@@ -9,7 +9,7 @@ interface GlyphStudioModalProps {
   onSaveAllographs: (allographs: AllographLibrary) => void;
 }
 
-const COMMON_STUDY_CHARS = ['a', 'e', 't', 's', 'x', 'y', 'n', 'r', 'o', 'd', '1', '2', '3', '=', '+', 'x'];
+const COMMON_STUDY_CHARS = ['a', 'e', 't', 's', 'x', 'y', 'n', 'r', 'o', 'd', '1', '2', '3', '=', '+', 'z'];
 
 export const GlyphStudioModal: React.FC<GlyphStudioModalProps> = ({
   isOpen,
@@ -102,12 +102,19 @@ export const GlyphStudioModal: React.FC<GlyphStudioModalProps> = ({
     ctx.restore();
   };
 
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    try {
+      canvas.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore in environments without pointer capture
+    }
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
 
     isDrawingRef.current = true;
     currentStrokesRef.current.push([[x, y, 1.0]]);
@@ -122,16 +129,20 @@ export const GlyphStudioModal: React.FC<GlyphStudioModalProps> = ({
     }
   };
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!isDrawingRef.current) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
 
     const currentStroke = currentStrokesRef.current[currentStrokesRef.current.length - 1];
-    currentStroke.push([x, y, 1.0]);
+    if (currentStroke) {
+      currentStroke.push([x, y, 1.0]);
+    }
 
     const ctx = canvas.getContext('2d');
     if (ctx) {
@@ -140,7 +151,14 @@ export const GlyphStudioModal: React.FC<GlyphStudioModalProps> = ({
     }
   };
 
-  const handleMouseUp = () => {
+  const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (isDrawingRef.current && canvasRef.current) {
+      try {
+        canvasRef.current.releasePointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+    }
     isDrawingRef.current = false;
   };
 
@@ -160,13 +178,25 @@ export const GlyphStudioModal: React.FC<GlyphStudioModalProps> = ({
     const newLib = { ...currentLib };
     if (!newLib[selectedChar]) newLib[selectedChar] = [];
 
+    if (currentStrokesRef.current.length === 0) {
+      newLib[selectedChar] = newLib[selectedChar].filter(
+        (v) => v.variantIndex !== selectedVariantIdx
+      );
+      if (newLib[selectedChar].length === 0) {
+        delete newLib[selectedChar];
+      }
+      setCurrentLib(newLib);
+      onSaveAllographs(newLib);
+      return;
+    }
+
     const existingIdx = newLib[selectedChar].findIndex((v) => v.variantIndex === selectedVariantIdx);
     const variantData: CustomGlyphVariant = {
       char: selectedChar,
       variantIndex: selectedVariantIdx,
       strokes: JSON.parse(JSON.stringify(currentStrokesRef.current)),
-      width: 140,
-      height: 140,
+      width: 280,
+      height: 280,
     };
 
     if (existingIdx >= 0) {
@@ -201,9 +231,12 @@ export const GlyphStudioModal: React.FC<GlyphStudioModalProps> = ({
                 <span className="text-xs bg-blue-600/20 text-blue-400 px-2 py-0.5 rounded border border-blue-500/30">
                   Multi-Variant Engine
                 </span>
+                <span className="text-[10px] bg-emerald-600/20 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/30 font-medium">
+                  Vector Cursive + TTF Hybrid
+                </span>
               </h2>
               <p className="text-xs text-slate-400">
-                Draw 5 natural variants per character. The engine samples variants via a Markov rule to forbid identical repeats!
+                Draw 5 natural variants per character. Custom strokes automatically feed both OpenType font rendering and continuous vector-cursive splines!
               </p>
             </div>
           </div>
@@ -291,10 +324,10 @@ export const GlyphStudioModal: React.FC<GlyphStudioModalProps> = ({
                   ref={canvasRef}
                   width={280}
                   height={280}
-                  onMouseDown={handleMouseDown}
-                  onMouseMove={handleMouseMove}
-                  onMouseUp={handleMouseUp}
-                  onMouseLeave={handleMouseUp}
+                  onPointerDown={handlePointerDown}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                  onPointerCancel={handlePointerUp}
                   className="touch-none"
                 />
                 <div className="absolute top-2 left-2 pointer-events-none text-[10px] text-slate-500 bg-white/80 px-2 py-0.5 rounded shadow-sm">

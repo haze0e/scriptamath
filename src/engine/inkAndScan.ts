@@ -3,9 +3,21 @@ import { SeededNoise } from './noise';
 
 export class InkAndScanPipeline {
   private noise: SeededNoise;
+  private scratchCanvas: HTMLCanvasElement | null = null;
 
   constructor(noise: SeededNoise) {
     this.noise = noise;
+  }
+
+  private getScratchCanvas(width: number, height: number): HTMLCanvasElement {
+    if (!this.scratchCanvas) {
+      this.scratchCanvas = document.createElement('canvas');
+    }
+    if (this.scratchCanvas.width !== width || this.scratchCanvas.height !== height) {
+      this.scratchCanvas.width = width;
+      this.scratchCanvas.height = height;
+    }
+    return this.scratchCanvas;
   }
 
   /**
@@ -39,7 +51,7 @@ export class InkAndScanPipeline {
 
     // Subtle paper grain fibers
     if (paper.showPaperTexture) {
-      this.drawPaperTextureFibers(ctx, width, height);
+      this.drawPaperTextureFibers(ctx, width, height, pageIndex);
     }
 
     // Template specific ruling lines & margins
@@ -461,7 +473,12 @@ export class InkAndScanPipeline {
   /**
    * Draws microscopic paper texture fibers and subtle organic page creases.
    */
-  private drawPaperTextureFibers(ctx: CanvasRenderingContext2D, width: number, height: number) {
+  private drawPaperTextureFibers(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    pageIndex: number = 0
+  ) {
     ctx.save();
 
     // 1. Scattering of organic cellulose pulp micro-fibers (~415 fibers)
@@ -493,24 +510,41 @@ export class InkAndScanPipeline {
       ctx.stroke();
     }
 
-    // 2. Subtle organic paper micro-creases/handling folds
-    // Diagonal gentle fold across upper quadrant
-    const creaseGrad1 = ctx.createLinearGradient(0, height * 0.15, width * 0.45, 0);
+    // 2. Subtle organic paper micro-creases/handling folds varying per page
+    // Diagonal gentle fold across upper quadrant (alternates corners or shifts angle)
+    const isTopRight = (pageIndex % 2 === 1) || (this.noise.random() < 0.35);
+    const c1StartX = isTopRight ? width : 0;
+    const c1StartY = height * (0.08 + this.noise.random() * 0.12);
+    const c1EndX = isTopRight
+      ? width - width * (0.28 + this.noise.random() * 0.22)
+      : width * (0.28 + this.noise.random() * 0.22);
+    const c1EndY = 0;
+
+    const creaseGrad1 = ctx.createLinearGradient(c1StartX, c1StartY, c1EndX, c1EndY);
     creaseGrad1.addColorStop(0, 'rgba(0, 0, 0, 0)');
-    creaseGrad1.addColorStop(0.48, 'rgba(0, 0, 0, 0.014)');
-    creaseGrad1.addColorStop(0.52, 'rgba(255, 255, 255, 0.022)');
+    creaseGrad1.addColorStop(0.48, `rgba(0, 0, 0, ${0.010 + this.noise.random() * 0.008})`);
+    creaseGrad1.addColorStop(0.52, `rgba(255, 255, 255, ${0.016 + this.noise.random() * 0.010})`);
     creaseGrad1.addColorStop(1, 'rgba(0, 0, 0, 0)');
     ctx.fillStyle = creaseGrad1;
-    ctx.fillRect(0, 0, width * 0.5, height * 0.25);
+    if (isTopRight) {
+      ctx.fillRect(width * 0.45, 0, width * 0.55, height * 0.26);
+    } else {
+      ctx.fillRect(0, 0, width * 0.55, height * 0.26);
+    }
 
     // Diagonal gentle handling curve across lower page
-    const creaseGrad2 = ctx.createLinearGradient(width * 0.5, height, width, height * 0.7);
+    const c2StartX = width * (0.35 + this.noise.random() * 0.25);
+    const c2StartY = height;
+    const c2EndX = width;
+    const c2EndY = height * (0.60 + this.noise.random() * 0.20);
+
+    const creaseGrad2 = ctx.createLinearGradient(c2StartX, c2StartY, c2EndX, c2EndY);
     creaseGrad2.addColorStop(0, 'rgba(0, 0, 0, 0)');
-    creaseGrad2.addColorStop(0.48, 'rgba(0, 0, 0, 0.012)');
-    creaseGrad2.addColorStop(0.52, 'rgba(255, 255, 255, 0.018)');
+    creaseGrad2.addColorStop(0.48, `rgba(0, 0, 0, ${0.008 + this.noise.random() * 0.008})`);
+    creaseGrad2.addColorStop(0.52, `rgba(255, 255, 255, ${0.014 + this.noise.random() * 0.010})`);
     creaseGrad2.addColorStop(1, 'rgba(0, 0, 0, 0)');
     ctx.fillStyle = creaseGrad2;
-    ctx.fillRect(width * 0.4, height * 0.65, width * 0.6, height * 0.35);
+    ctx.fillRect(width * 0.35, height * 0.55, width * 0.65, height * 0.45);
 
     ctx.restore();
   }
@@ -526,39 +560,44 @@ export class InkAndScanPipeline {
     ctx: CanvasRenderingContext2D,
     width: number,
     height: number,
-    paper: PaperScanSettings
+    paper: PaperScanSettings,
+    pageIndex: number = 0
   ) {
     // 1. Apply Scanner Contrast Filter FIRST (so it doesn't bleach out shadows & grain)
     if (paper.scanFilter !== 'original') {
-      this.applyScannerFilter(ctx, width, height, paper.scanFilter);
+      const awbJitter = (this.noise.random() - 0.5) * 0.06;
+      const effectiveWarmth = Math.max(0, Math.min(1.0, (paper.paperWarmth ?? 0) + awbJitter));
+      this.applyScannerFilter(ctx, width, height, paper.scanFilter, effectiveWarmth);
     }
 
     // 2. Re-apply subtle physical paper fiber grain OVER the whitened scan
     if (paper.showPaperTexture) {
-      this.drawPaperTextureFibers(ctx, width, height);
+      this.drawPaperTextureFibers(ctx, width, height, pageIndex);
     }
 
     // 3. Ambient mobile phone desk lighting gradient
-    this.applyAmbientDeskLighting(ctx, width, height);
+    this.applyAmbientDeskLighting(ctx, width, height, pageIndex);
 
     // 4. Smartphone corner shadow gradient (if enabled)
     if (paper.shadowIntensity > 0) {
-      this.drawSmartphoneCornerShadow(ctx, width, height, paper.shadowIntensity);
+      this.drawSmartphoneCornerShadow(ctx, width, height, paper.shadowIntensity, pageIndex);
     }
 
     // 5. Spine page curl & 2D keystone camera perspective tilt
     if (paper.perspectiveTilt > 0) {
-      this.drawSpinePageCurl(ctx, width, height, paper.perspectiveTilt);
-      this.applyKeystonePerspective(ctx, width, height, paper.perspectiveTilt);
+      this.drawSpinePageCurl(ctx, width, height, paper.perspectiveTilt, pageIndex);
+      this.applyKeystonePerspective(ctx, width, height, paper.perspectiveTilt, paper, pageIndex);
     }
 
     // 6. Corner lens optical softness
     if (paper.scanFilter === 'camscanner' || paper.scanFilter === 'natural-photo') {
-      this.applyCornerLensSoftness(ctx, width, height);
+      this.applyCornerLensSoftness(ctx, width, height, pageIndex);
     }
 
     // 7. High-frequency CMOS sensor grain (LAST - covers all pixels so paper is never sterile pure #FFFFFF)
-    this.applySensorISOGrain(ctx, width, height, 3.2);
+    if (paper.scanFilter === 'original') {
+      this.applySensorISOGrain(ctx, width, height, 3.2);
+    }
   }
 
   /**
@@ -569,13 +608,20 @@ export class InkAndScanPipeline {
   public applyAmbientDeskLighting(
     ctx: CanvasRenderingContext2D,
     width: number,
-    height: number
+    height: number,
+    _pageIndex: number = 0
   ) {
     ctx.save();
-    const grad = ctx.createLinearGradient(0, 0, width, height);
-    grad.addColorStop(0, 'rgba(255, 250, 240, 0.04)'); // subtle warm highlight
+    const lightAngle = (Math.PI * 0.25) + (this.noise.random() - 0.5) * 0.30;
+    const lx1 = width * 0.5 - Math.cos(lightAngle) * width * 0.55;
+    const ly1 = height * 0.5 - Math.sin(lightAngle) * height * 0.55;
+    const lx2 = width * 0.5 + Math.cos(lightAngle) * width * 0.55;
+    const ly2 = height * 0.5 + Math.sin(lightAngle) * height * 0.55;
+
+    const grad = ctx.createLinearGradient(lx1, ly1, lx2, ly2);
+    grad.addColorStop(0, `rgba(255, 250, 240, ${0.035 + this.noise.random() * 0.02})`); // subtle warm highlight
     grad.addColorStop(0.6, 'rgba(0, 0, 0, 0)');
-    grad.addColorStop(1, 'rgba(20, 25, 40, 0.06)');    // subtle cool shadow falloff
+    grad.addColorStop(1, `rgba(20, 25, 40, ${0.05 + this.noise.random() * 0.025})`);     // subtle cool shadow falloff
 
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, width, height);
@@ -595,72 +641,175 @@ export class InkAndScanPipeline {
   ) {
     const imgData = ctx.getImageData(0, 0, width, height);
     const data = imgData.data;
+    const seedInt = Math.floor(this.noise.seed) | 0;
+    const scale = (noiseIntensity * 2) / 255.0;
 
-    for (let i = 0; i < data.length; i += 4) {
-      const grain = (Math.random() - 0.5) * noiseIntensity * 2;
-      data[i] = Math.max(0, Math.min(255, data[i] + grain));         // R
-      data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + grain)); // G
-      data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + grain)); // B
+    for (let y = 0; y < height; y++) {
+      const rowOffset = y * width * 4;
+      for (let x = 0; x < width; x++) {
+        const i = rowOffset + x * 4;
+        let h = (x * 374761393 + y * 668265263 + seedInt) | 0;
+        h = Math.imul(h ^ (h >>> 13), 1274126177);
+        const grain = (((h ^ (h >>> 16)) & 0xff) - 128) * scale;
+
+        data[i] = Math.max(0, Math.min(255, data[i] + grain));         // R
+        data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + grain)); // G
+        data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + grain)); // B
+      }
     }
 
     ctx.putImageData(imgData, 0, 0);
   }
 
   /**
-   * Real 2D Keystone Perspective Tilt / Camera Shear skew.
+   * Subtle Cellulose Ink Feathering:
+   * Perturbs high-contrast ink boundaries in textCanvas with high-frequency cellulose noise
+   * when paper.showPaperTexture === true, eliminating crisp digital vector edges at high zoom.
+   */
+  public applyCelluloseInkFeathering(textCanvas: HTMLCanvasElement) {
+    const ctx = textCanvas.getContext('2d');
+    if (!ctx) return;
+    const w = textCanvas.width;
+    const h = textCanvas.height;
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const d = imgData.data;
+
+    for (let y = 0; y < h; y += 2) {
+      const rowOffset = y * w * 4;
+      for (let x = 0; x < w; x += 2) {
+        const i = rowOffset + x * 4;
+        const a = d[i + 3];
+        if (a > 30 && a < 235) {
+          const mod = this.noise.get2D(x * 0.45, y * 0.45) * 0.08;
+          d[i + 3] = Math.max(0, Math.min(255, Math.round(a * (1.0 + mod))));
+        }
+      }
+    }
+    ctx.putImageData(imgData, 0, 0);
+  }
+
+  /**
+   * Non-Linear Cylindrical Spine Warp + Projective Trapezoidal Camera Keystone
+   * with realistic desk contact shadow and organic per-page handheld tilt.
    */
   private applyKeystonePerspective(
     ctx: CanvasRenderingContext2D,
     width: number,
     height: number,
-    intensity: number
+    intensity: number,
+    paper?: PaperScanSettings,
+    _pageIndex: number = 0
   ) {
     if (intensity <= 0) return;
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = width;
-    tempCanvas.height = height;
+    const tempCanvas = this.getScratchCanvas(width, height);
     const tempCtx = tempCanvas.getContext('2d');
     if (!tempCtx) return;
+    tempCtx.clearRect(0, 0, width, height);
     tempCtx.drawImage(ctx.canvas, 0, 0);
 
     ctx.save();
-    ctx.fillStyle = '#ebe9e2';
+    // 1. Subtle desk matte + contact drop shadow behind lifted sheet
+    if (paper?.deskEdgeShadow ?? true) {
+      const deskAngle = (Math.PI * 0.25) + (this.noise.random() - 0.5) * 0.30;
+      const dx1 = width * 0.5 - Math.cos(deskAngle) * width * 0.6;
+      const dy1 = height * 0.5 - Math.sin(deskAngle) * height * 0.6;
+      const dx2 = width * 0.5 + Math.cos(deskAngle) * width * 0.6;
+      const dy2 = height * 0.5 + Math.sin(deskAngle) * height * 0.6;
+
+      const deskGrad = ctx.createLinearGradient(dx1, dy1, dx2, dy2);
+      deskGrad.addColorStop(0, '#cfc9be');
+      deskGrad.addColorStop(1, '#b8b1a4');
+      ctx.fillStyle = deskGrad;
+    } else {
+      ctx.fillStyle = '#ebe9e2';
+    }
     ctx.fillRect(0, 0, width, height);
 
-    const skewX = ((this.noise.random() - 0.5) * 0.007) * intensity;
-    const skewY = ((this.noise.random() - 0.5) * 0.005) * intensity;
-    const rotAngle = ((this.noise.random() - 0.5) * 0.006) * intensity;
-    const scale = 1.0 - 0.012 * intensity;
+    // Natural handheld rotation angle per page (typically ~0.5° - 1.6° when tilted)
+    const rotAngle = (this.noise.random() - 0.48) * 0.038 * intensity;
+    const baseScale = 1.0 - (0.012 + this.noise.random() * 0.008) * intensity;
     const cx = width * 0.5;
     const cy = height * 0.5;
 
     ctx.translate(cx, cy);
     ctx.rotate(rotAngle);
-    ctx.scale(scale, scale);
-    ctx.transform(1, skewY, skewX, 1, 0, 0);
+    ctx.scale(baseScale, baseScale);
     ctx.translate(-cx, -cy);
 
-    ctx.drawImage(tempCanvas, 0, 0);
+    // Contact shadow underneath sheet (matches tilt and varies per page)
+    if (paper?.deskEdgeShadow ?? true) {
+      ctx.save();
+      const shadowAlpha = (0.28 + this.noise.random() * 0.10) * intensity;
+      ctx.shadowColor = `rgba(15, 20, 30, ${shadowAlpha})`;
+      ctx.shadowBlur = (15 + this.noise.random() * 9) * intensity + 4;
+      ctx.shadowOffsetX = (4 + this.noise.random() * 5) * intensity;
+      ctx.shadowOffsetY = (6 + this.noise.random() * 5) * intensity;
+      ctx.fillStyle = '#fcfbf8';
+      ctx.fillRect(0, 0, width, height);
+      ctx.restore();
+    }
+
+    // 2. Strip-wise Cylindrical Spine Curl + Projective Trapezoidal Taper
+    const stripW = 8;
+    const spineSpan = Math.min(280, width * (0.12 + 0.10 * intensity + (this.noise.random() - 0.5) * 0.05));
+    const maxSpineLift = (9 + this.noise.random() * 8) * intensity;
+    const topTrapInset = width * (0.007 + this.noise.random() * 0.015) * intensity;
+    const yawTilt = (this.noise.random() - 0.5) * 0.006 * intensity;
+
+    for (let sx = 0; sx < width; sx += stripW) {
+      const sw = Math.min(stripW, width - sx);
+      const uSpine = Math.max(0, 1 - sx / spineSpan);
+      const spineLiftY = -maxSpineLift * Math.pow(uSpine, 2.2);
+      const spineScaleY = 1 - 0.008 * intensity * uSpine * uSpine;
+
+      // Projective taper: interpolate x subtly inward near top + organic yaw
+      const xNorm = sx / width - 0.5;
+      const projX = sx - xNorm * topTrapInset * 0.5;
+      const projTilt = xNorm * topTrapInset * 0.0005 + yawTilt * 0.0004;
+
+      ctx.save();
+      ctx.translate(projX, spineLiftY);
+      ctx.transform(1, projTilt, 0, spineScaleY, 0, 0);
+      ctx.drawImage(tempCanvas, sx, 0, sw, height, 0, 0, sw, height);
+      ctx.restore();
+    }
     ctx.restore();
   }
 
   /**
-   * Back-page bleed through ghosting (faint flipped ink impression)
+   * Back-page bleed through ghosting (faint flipped ink impression) with per-page jitter
    */
   public drawBackPageBleed(
     ctx: CanvasRenderingContext2D,
     bleedCanvas: HTMLCanvasElement,
     width: number,
     height: number,
-    bleedAmount: number
+    bleedAmount: number,
+    _pageIndex: number = 0
   ) {
     if (bleedAmount <= 0) return;
 
     ctx.save();
-    // Horizontally flipped ghosting with 4-8% opacity and +18px vertical offset
-    ctx.globalAlpha = bleedAmount * 0.12;
-    ctx.translate(width, 18);
+    // Organic sheet-to-sheet bleed opacity fluctuation
+    const effectiveAlpha = bleedAmount * (0.09 + this.noise.random() * 0.05);
+    ctx.globalAlpha = effectiveAlpha;
+
+    // Horizontally flipped ghosting with per-page registration shifts:
+    // Vertical drift: 12px to 30px
+    // Horizontal drift: ±8px
+    // Slight rotational registration drift: ±0.25°
+    const dy = 12 + this.noise.random() * 18;
+    const dx = (this.noise.random() - 0.5) * 16;
+    const rotAngle = (this.noise.random() - 0.5) * 0.008;
+
+    const cx = width * 0.5;
+    const cy = height * 0.5;
+
+    ctx.translate(cx + dx, cy + dy);
+    ctx.rotate(rotAngle);
     ctx.scale(-1, 1);
+    ctx.translate(-cx, -cy);
+
     ctx.drawImage(bleedCanvas, 0, 0, width, height);
     ctx.restore();
   }
@@ -670,15 +819,19 @@ export class InkAndScanPipeline {
    */
   private drawSpinePageCurl(
     ctx: CanvasRenderingContext2D,
-    width: number,
+    _width: number,
     height: number,
-    intensity: number
+    intensity: number,
+    _pageIndex: number = 0
   ) {
     ctx.save();
-    const curlWidth = 70 * intensity;
+    const curlWidth = (55 + this.noise.random() * 32) * intensity;
+    const curlAlpha1 = (0.15 + this.noise.random() * 0.07) * intensity;
+    const curlAlpha2 = (0.06 + this.noise.random() * 0.04) * intensity;
+
     const gradient = ctx.createLinearGradient(0, 0, curlWidth, 0);
-    gradient.addColorStop(0, `rgba(10, 15, 25, ${0.18 * intensity})`);
-    gradient.addColorStop(0.3, `rgba(20, 25, 35, ${0.08 * intensity})`);
+    gradient.addColorStop(0, `rgba(10, 15, 25, ${curlAlpha1})`);
+    gradient.addColorStop(0.35, `rgba(20, 25, 35, ${curlAlpha2})`);
     gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
 
     ctx.fillStyle = gradient;
@@ -687,50 +840,104 @@ export class InkAndScanPipeline {
   }
 
   /**
-   * Smartphone corner shadow & warm desk lighting
+   * Smartphone corner shadow & warm desk lighting with per-page natural placement
    */
   private drawSmartphoneCornerShadow(
     ctx: CanvasRenderingContext2D,
     width: number,
     height: number,
-    intensity: number
+    intensity: number,
+    pageIndex: number = 0
   ) {
     ctx.save();
-    // 1. Diagonal phone cast shadow on bottom right
+    const pageIntensity = intensity * (0.88 + this.noise.random() * 0.24);
+
+    // 1. Diagonal phone cast shadow: mostly bottom-right, occasionally bottom-left
+    const isBottomLeft = (pageIndex % 4 === 3) || (this.noise.random() < 0.20);
+
+    let startX: number;
+    let startY: number;
+    let focusX: number;
+    let focusY: number;
+    let outerR: number;
+
+    if (isBottomLeft) {
+      startX = width * (0.04 + this.noise.random() * 0.06);
+      startY = height * (0.91 + this.noise.random() * 0.07);
+      focusX = width * (0.22 + this.noise.random() * 0.08);
+      focusY = height * (0.72 + this.noise.random() * 0.08);
+      outerR = width * (0.68 + this.noise.random() * 0.16);
+    } else {
+      startX = width * (0.92 + this.noise.random() * 0.06);
+      startY = height * (0.91 + this.noise.random() * 0.07);
+      focusX = width * (0.72 + this.noise.random() * 0.08);
+      focusY = height * (0.72 + this.noise.random() * 0.08);
+      outerR = width * (0.68 + this.noise.random() * 0.16);
+    }
+
     const shadowGrad = ctx.createRadialGradient(
-      width * 0.95,
-      height * 0.95,
-      10,
-      width * 0.75,
-      height * 0.75,
-      width * 0.75
+      startX,
+      startY,
+      8 + this.noise.random() * 10,
+      focusX,
+      focusY,
+      outerR
     );
-    shadowGrad.addColorStop(0, `rgba(20, 25, 40, ${0.32 * intensity})`);
-    shadowGrad.addColorStop(0.5, `rgba(40, 45, 60, ${0.12 * intensity})`);
+    shadowGrad.addColorStop(0, `rgba(20, 25, 40, ${0.32 * pageIntensity})`);
+    shadowGrad.addColorStop(0.5, `rgba(40, 45, 60, ${0.12 * pageIntensity})`);
     shadowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
 
     ctx.fillStyle = shadowGrad;
     ctx.fillRect(0, 0, width, height);
 
+    // 1.5 Subtle secondary hand / knuckle shadow lobe
+    const thumbX = startX + (isBottomLeft ? 1 : -1) * width * (0.04 + this.noise.random() * 0.08);
+    const thumbY = startY - height * (0.06 + this.noise.random() * 0.08);
+    const thumbR = width * (0.24 + this.noise.random() * 0.10);
+    const thumbGrad = ctx.createRadialGradient(
+      thumbX,
+      thumbY,
+      6,
+      thumbX,
+      thumbY,
+      thumbR
+    );
+    thumbGrad.addColorStop(0, `rgba(25, 30, 45, ${0.14 * pageIntensity})`);
+    thumbGrad.addColorStop(0.6, `rgba(35, 40, 55, ${0.05 * pageIntensity})`);
+    thumbGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = thumbGrad;
+    ctx.fillRect(0, 0, width, height);
+
     // 2. Warm uneven desk ambient light gradient
-    const warmGrad = ctx.createLinearGradient(0, 0, width, height);
-    warmGrad.addColorStop(0, `rgba(255, 245, 225, ${0.08 * intensity})`);
-    warmGrad.addColorStop(1, `rgba(180, 160, 140, ${0.05 * intensity})`);
+    const lightAngle = (Math.PI * 0.25) + (this.noise.random() - 0.5) * 0.35;
+    const lx1 = width * 0.5 - Math.cos(lightAngle) * width * 0.55;
+    const ly1 = height * 0.5 - Math.sin(lightAngle) * height * 0.55;
+    const lx2 = width * 0.5 + Math.cos(lightAngle) * width * 0.55;
+    const ly2 = height * 0.5 + Math.sin(lightAngle) * height * 0.55;
+
+    const warmGrad = ctx.createLinearGradient(lx1, ly1, lx2, ly2);
+    warmGrad.addColorStop(0, `rgba(255, 245, 225, ${(0.07 + this.noise.random() * 0.03) * pageIntensity})`);
+    warmGrad.addColorStop(1, `rgba(180, 160, 140, ${(0.04 + this.noise.random() * 0.02) * pageIntensity})`);
     ctx.fillStyle = warmGrad;
     ctx.fillRect(0, 0, width, height);
 
-    // 3. Subtle camera lens optical vignette around outer perimeter
+    // 3. Camera lens optical vignette around outer perimeter (organic center shift)
+    const vigX = width * (0.47 + this.noise.random() * 0.06);
+    const vigY = height * (0.47 + this.noise.random() * 0.06);
+    const vigR1 = width * (0.42 + this.noise.random() * 0.06);
+    const vigR2 = width * (0.80 + this.noise.random() * 0.08);
+
     const vignette = ctx.createRadialGradient(
-      width * 0.5,
-      height * 0.5,
-      width * 0.45,
-      width * 0.5,
-      height * 0.5,
-      width * 0.82
+      vigX,
+      vigY,
+      vigR1,
+      vigX,
+      vigY,
+      vigR2
     );
     vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
     vignette.addColorStop(0.7, 'rgba(0, 0, 0, 0)');
-    vignette.addColorStop(1, `rgba(15, 20, 30, ${0.15 * intensity})`);
+    vignette.addColorStop(1, `rgba(15, 20, 30, ${(0.13 + this.noise.random() * 0.05) * pageIntensity})`);
     ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, width, height);
 
@@ -747,13 +954,18 @@ export class InkAndScanPipeline {
     ctx: CanvasRenderingContext2D,
     width: number,
     height: number,
-    filter: ScanFilter
+    filter: ScanFilter,
+    paperWarmth: number = 0
   ) {
     const imgData = ctx.getImageData(0, 0, width, height);
     const d = imgData.data;
 
     const litLimitX = width * 0.45;
     const litLimitY = height * 0.45;
+
+    const targetR = Math.min(255, Math.max(0, 252 - Math.round(paperWarmth * 6)));
+    const targetG = Math.min(255, Math.max(0, 252 - Math.round(paperWarmth * 16)));
+    const targetB = Math.min(255, Math.max(0, 253 - Math.round(paperWarmth * 42)));
 
     if (filter === 'camscanner') {
       for (let y = 0; y < height; y++) {
@@ -771,47 +983,68 @@ export class InkAndScanPipeline {
           const lum = 0.299 * r + 0.587 * g + 0.114 * b + lightWaveY;
 
           // Preserve authentic fluorescent/pastel study highlighters (CamScanner Magic Color logic)
+          // and require high green+blue for cyan (so dark navy ink edges and #adc9e8 ruling lines aren't misclassified):
           const isHighlighter =
-            (r > 190 && g > 165 && b < 175 && (r - b) > 35) || // yellow / amber
-            (g > 185 && r < 195 && (g - r) > 25) ||            // green
-            (b > 185 && r < 185 && (b - r) > 25) ||            // cyan
-            (r > 195 && b > 140 && g < 175 && (r - g) > 30);   // pink
+            (r > 210 && g > 190 && b < 165 && (r - b) > 55) || // fluorescent yellow
+            (g > 205 && r < 180 && b > 140 && (g - r) > 35) || // fluorescent green
+            (b > 210 && g > 195 && r < 165 && (b - r) > 50) || // fluorescent cyan (requires high G & B)
+            (r > 215 && b > 165 && g < 195 && (r - g) > 45);   // fluorescent pink
 
           if (isHighlighter) {
             // Retain warm saturated fluorescent dye
             continue;
           }
 
+          // Preserve light ruling blue lines before ink darkening curve
+          if (b > r + 15 && lum > 170) {
+            d[i] = 175;
+            d[i + 1] = 202;
+            d[i + 2] = 232;
+            continue;
+          }
+
+          // Graphite pencil neutral grey exemption (prevents pencil rough math from turning navy blue)
+          const isPencilGraphite =
+            Math.abs(r - g) < 12 &&
+            Math.abs(g - b) < 12 &&
+            lum >= 60 &&
+            lum <= 195;
+          if (isPencilGraphite) {
+            const gp = Math.max(35, Math.round(lum * 0.85));
+            d[i] = gp;
+            d[i + 1] = gp + 2;
+            d[i + 2] = gp + 6;
+            continue;
+          }
+
           if (lum > 218) {
-            if (b > r + 8 && b > g + 4) {
-              d[i] = 175;
-              d[i + 1] = 202;
-              d[i + 2] = 232;
-            } else {
-              const pv = Math.min(255, Math.max(247, Math.round(252 + grain)));
-              d[i] = pv;
-              d[i + 1] = pv;
-              d[i + 2] = Math.min(255, pv + 1);
-            }
+            d[i] = Math.min(255, Math.max(200, Math.round(targetR + grain)));
+            d[i + 1] = Math.min(255, Math.max(200, Math.round(targetG + grain)));
+            d[i + 2] = Math.min(255, Math.max(200, Math.round(targetB + grain)));
           } else {
             const t = Math.max(0, Math.min(1, (lum - 115) / 103));
             const smoothT = t * t * (3 - 2 * t);
 
+            const isRedInk = r > b + 20 && r > g + 20;
+            const isGenuinelyBlue = b > r + 15 && b > g + 10;
+
             let inkR = Math.max(10, r * 0.68);
             let inkG = Math.max(16, g * 0.76);
-            let inkB = Math.min(245, b * 1.20 + 16);
+            let inkB = isGenuinelyBlue ? Math.min(245, b * 1.20 + 16) : Math.max(10, b * (isRedInk ? 0.65 : 0.72));
 
-            if (b > r + 8 && isUpperZoneY && x < litLimitX) {
+            if (isGenuinelyBlue && isUpperZoneY && x < litLimitX) {
               const litZone = (1.0 - x / litLimitX) * yFactor;
               inkR = Math.min(255, inkR + Math.round(10 * litZone));
               inkG = Math.max(0, inkG - Math.round(4 * litZone));
               inkB = Math.min(255, inkB + Math.round(7 * litZone));
             }
 
-            const paperBase = 252 + grain * 0.5;
-            d[i] = Math.round(inkR * (1 - smoothT) + paperBase * smoothT);
-            d[i + 1] = Math.round(inkG * (1 - smoothT) + paperBase * smoothT);
-            d[i + 2] = Math.round(inkB * (1 - smoothT) + (paperBase + 1) * smoothT);
+            const paperBaseR = targetR + grain * 0.5;
+            const paperBaseG = targetG + grain * 0.5;
+            const paperBaseB = targetB + grain * 0.5;
+            d[i] = Math.round(inkR * (1 - smoothT) + paperBaseR * smoothT);
+            d[i + 1] = Math.round(inkG * (1 - smoothT) + paperBaseG * smoothT);
+            d[i + 2] = Math.round(inkB * (1 - smoothT) + paperBaseB * smoothT);
           }
         }
       }
@@ -868,38 +1101,58 @@ export class InkAndScanPipeline {
 
   /**
    * Corner Lens Softness (Smartphone Depth-of-Field):
-   * Applies subtle optical softness (0.5px blur) at extreme top-left and bottom-right 12% corners
+   * Applies subtle optical softness at extreme corners
    * of the canvas so page center remains tack-sharp while corners exhibit authentic camera optics.
    */
-  private applyCornerLensSoftness(ctx: CanvasRenderingContext2D, width: number, height: number) {
-    const cornerR = Math.min(width, height) * 0.16;
-
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = width;
-    tempCanvas.height = height;
+  private applyCornerLensSoftness(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    _pageIndex: number = 0
+  ) {
+    const cornerR = Math.ceil(Math.min(width, height) * (0.13 + this.noise.random() * 0.05));
+    const pad = 8;
+    const tempCanvas = this.getScratchCanvas(cornerR + pad * 2, cornerR + pad * 2);
     const tempCtx = tempCanvas.getContext('2d');
     if (!tempCtx) return;
-    tempCtx.drawImage(ctx.canvas, 0, 0);
 
-    ctx.save();
-    ctx.filter = 'blur(1.0px)';
+    // Sample background paper color near top-left so blur doesn't sample transparent black
+    const samplePx = ctx.getImageData(Math.min(width - 1, 20), Math.min(height - 1, 20), 1, 1).data;
+    const paperBg = `rgb(${samplePx[0]},${samplePx[1]},${samplePx[2]})`;
+    const blurPx = (0.9 + this.noise.random() * 0.4).toFixed(1);
 
     // 1. Top-left corner
+    tempCtx.fillStyle = paperBg;
+    tempCtx.fillRect(0, 0, cornerR + pad * 2, cornerR + pad * 2);
+    tempCtx.drawImage(ctx.canvas, 0, 0, cornerR, cornerR, pad, pad, cornerR, cornerR);
     ctx.save();
+    ctx.filter = `blur(${blurPx}px)`;
     ctx.beginPath();
     ctx.arc(0, 0, cornerR, 0, Math.PI * 2);
     ctx.clip();
-    ctx.drawImage(tempCanvas, 0, 0);
+    ctx.drawImage(tempCanvas, pad, pad, cornerR, cornerR, 0, 0, cornerR, cornerR);
     ctx.restore();
 
     // 2. Bottom-right corner
+    tempCtx.fillStyle = paperBg;
+    tempCtx.fillRect(0, 0, cornerR + pad * 2, cornerR + pad * 2);
+    tempCtx.drawImage(
+      ctx.canvas,
+      width - cornerR,
+      height - cornerR,
+      cornerR,
+      cornerR,
+      pad,
+      pad,
+      cornerR,
+      cornerR
+    );
     ctx.save();
+    ctx.filter = `blur(${blurPx}px)`;
     ctx.beginPath();
     ctx.arc(width, height, cornerR, 0, Math.PI * 2);
     ctx.clip();
-    ctx.drawImage(tempCanvas, 0, 0);
-    ctx.restore();
-
+    ctx.drawImage(tempCanvas, pad, pad, cornerR, cornerR, width - cornerR, height - cornerR, cornerR, cornerR);
     ctx.restore();
   }
 }

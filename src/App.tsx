@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import opentype from 'opentype.js';
 import { AppState, AllographLibrary, CustomPersonaProfile } from './types';
 import { SAMPLE_ASSIGNMENTS } from './data/samples';
 import { HANDWRITING_PERSONAS } from './constants/personas';
 import { loadFontById, loadFontFromArrayBuffer } from './engine/fontLoader';
 import { PageEngine } from './engine/pageEngine';
+import { extractStructuredPromptSections } from './engine/formatter';
 import { Header } from './components/Header';
 import { StudioControls } from './components/StudioControls';
 import { CanvasPreview } from './components/CanvasPreview';
@@ -14,9 +15,24 @@ import { HistoryModal } from './components/HistoryModal';
 import { StyleLabModal } from './components/StyleLabModal';
 
 export const App: React.FC = () => {
-  const [appState, setAppState] = useState<AppState>(() => {
-    const sampleParam = new URLSearchParams(window.location.search).get('sample');
+  const initialData = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sampleParam = params.get('sample');
     const initialSample = SAMPLE_ASSIGNMENTS.find((s) => s.id === sampleParam) || SAMPLE_ASSIGNMENTS[0];
+    const initialStructured = extractStructuredPromptSections(initialSample.content);
+    return { initialSample, initialStructured, params };
+  }, []);
+
+  const lastSyncedStructuredRef = useRef(initialData.initialStructured);
+
+  const [appState, setAppState] = useState<AppState>(() => {
+    const { initialSample, initialStructured, params } = initialData;
+    const rawHl = params.get('highlight');
+    const rawTarget = params.get('hlTarget');
+    const rawWarmth = parseFloat(params.get('warmth') || '0.15');
+    const validHighlights = ['none', 'yellow', 'green', 'cyan', 'pink'] as const;
+    const validTargets = ['boxed', 'headings', 'both'] as const;
+
     return {
       rawInput: initialSample.content,
       handwriting: {
@@ -41,8 +57,14 @@ export const App: React.FC = () => {
         circledQuestionLabels: false,
         answerBubbleStyle: 'box',
         showAnswerCheckmarks: false,
-        tableLines: false,
+        tableLines: true,
         crossedZ: true,
+        cursiveMode: 'semi-cursive',
+        cursiveMathX: true,
+        delayedCrossAndDot: true,
+        snapToRuledLines: true,
+        caretInsertionRate: 0.012,
+        coldStartStarvation: true,
       },
       pen: {
         bodyColorPreset: 'blue',
@@ -63,19 +85,21 @@ export const App: React.FC = () => {
         perspectiveTilt: 0.16, // Subtle camera perspective skew & page curl
         showPaperTexture: true, // Physical paper pulp fibers & micro-creases
         showMarginGuides: false, // No ruled lines, clean blank sheet
-        roughWorkColumn: false, // No rough sidebar
+        roughWorkColumn: initialStructured.roughWork.length > 0, // Enable rough sidebar if rough work present
         spiralHoles: true, // Authentic spiral notebook punch holes & coils
         studentName: 'Chitesh (25323015)',
-        assignmentTitle: initialSample.title,
-        dateStr: '03/11/2026',
+        assignmentTitle: initialStructured.title || initialSample.title,
+        dateStr: initialStructured.dateStr || '03/11/2026',
         showCoffeeStain: false,
-        marginAnnotation: 'Problem 3 (b) — Due Nov 14',
-        customRoughWork: ['14 * 6 = 84', '84 - 23 = 61', '√61 ≈ 7.81'],
+        marginAnnotation: initialStructured.marginNote || 'Problem 3 (b) — Due Nov 14',
+        customRoughWork: initialStructured.roughWork.length > 0 ? initialStructured.roughWork : ['14 · 6 = 84', '84 - 23 = 61', '√61 ≈ 7.81'],
         showStickyNote: false,
         stickyNoteText: "Don't forget to submit before 5 PM!",
-        highlighterMode: (new URLSearchParams(window.location.search).get('highlight') as any) || 'none',
-        highlighterTarget: (new URLSearchParams(window.location.search).get('hlTarget') as any) || 'both',
-        paperWarmth: parseFloat(new URLSearchParams(window.location.search).get('warmth') || '0.15'),
+        highlighterMode: validHighlights.includes(rawHl as any) ? (rawHl as any) : 'none',
+        highlighterTarget: validTargets.includes(rawTarget as any) ? (rawTarget as any) : 'both',
+        paperWarmth: Number.isFinite(rawWarmth) ? Math.max(0, Math.min(1, rawWarmth)) : 0.15,
+        roughWorkInstrument: 'pencil',
+        deskEdgeShadow: true,
       },
       zoom: 0.72,
       currentPage: 0,
@@ -119,6 +143,43 @@ export const App: React.FC = () => {
       isCancelled = true;
     };
   }, [appState.handwriting.fontFamily, appState.handwriting.customFontUrl]);
+
+  // Synchronize structured prompts ([METADATA], [ROUGH_WORK]) into notebook metadata & rough column
+  useEffect(() => {
+    const structured = extractStructuredPromptSections(appState.rawInput);
+    if (!structured.hasStructure) {
+      return;
+    }
+
+    const prevSynced = lastSyncedStructuredRef.current;
+    const roughChanged = JSON.stringify(structured.roughWork) !== JSON.stringify(prevSynced.roughWork);
+    const titleChanged = Boolean(structured.title && structured.title !== prevSynced.title);
+    const dateChanged = Boolean(structured.dateStr && structured.dateStr !== prevSynced.dateStr);
+    const marginChanged = Boolean(structured.marginNote && structured.marginNote !== prevSynced.marginNote);
+
+    if (!roughChanged && !titleChanged && !dateChanged && !marginChanged) {
+      return;
+    }
+
+    lastSyncedStructuredRef.current = structured;
+
+    setAppState((prev) => ({
+      ...prev,
+      paper: {
+        ...prev.paper,
+        ...(roughChanged
+          ? {
+              roughWorkColumn: structured.roughWork.length > 0,
+              customRoughWork:
+                structured.roughWork.length > 0 ? structured.roughWork : prev.paper.customRoughWork,
+            }
+          : {}),
+        ...(titleChanged ? { assignmentTitle: structured.title } : {}),
+        ...(dateChanged ? { dateStr: structured.dateStr } : {}),
+        ...(marginChanged ? { marginAnnotation: structured.marginNote } : {}),
+      },
+    }));
+  }, [appState.rawInput]);
 
   const handleCustomFontUpload = async (buffer: ArrayBuffer, name: string) => {
     try {
@@ -214,6 +275,7 @@ export const App: React.FC = () => {
             currentFont={currentFont}
             pageEngine={pageEngine}
             onRegenerateSeed={handleRegenerateSeed}
+            allographs={allographs}
           />
         </div>
 

@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import opentype from 'opentype.js';
-import { AppState, HandwritingStyleSettings, PenSettings } from '../types';
+import { AppState, HandwritingStyleSettings, PenSettings, AllographLibrary } from '../types';
 import { parseRawAIOutput } from '../engine/formatter';
 import { PageEngine, PageLayoutData, PAGE_WIDTH, PAGE_HEIGHT } from '../engine/pageEngine';
 import { ExportModal } from './ExportModal';
@@ -42,6 +42,7 @@ interface CanvasPreviewProps {
   currentFont: opentype.Font | null;
   pageEngine: PageEngine;
   onRegenerateSeed: () => void;
+  allographs?: AllographLibrary;
 }
 
 export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
@@ -50,16 +51,16 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
   currentFont,
   pageEngine,
   onRegenerateSeed,
+  allographs,
 }) => {
   const [pagesData, setPagesData] = useState<PageLayoutData[]>([]);
   const [currentPageIdx, setCurrentPageIdx] = useState<number>(() => {
     const p = new URLSearchParams(window.location.search).get('page');
-    return p ? Math.max(0, parseInt(p, 10) - 1) : 0;
+    const parsed = p ? parseInt(p, 10) : NaN;
+    return Number.isFinite(parsed) && parsed >= 1 ? parsed - 1 : 0;
   });
   const [exportModalFormat, setExportModalFormat] = useState<'pdf' | 'zip' | null>(null);
-  const [isExporting, setIsExporting] = useState<boolean>(false);
   const [isRendering, setIsRendering] = useState<boolean>(false);
-  const [exportSuccess, setExportSuccess] = useState<boolean>(false);
   const [isVariationStudioOpen, setIsVariationStudioOpen] = useState<boolean>(() => {
     return new URLSearchParams(window.location.search).get('modal') === 'variations';
   });
@@ -69,7 +70,8 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
   });
   const [replayBlockCount, setReplayBlockCount] = useState<number>(() => {
     const b = new URLSearchParams(window.location.search).get('replayBlock');
-    return b ? parseInt(b, 10) : 0;
+    const parsed = b ? parseInt(b, 10) : NaN;
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
   });
   const [replayPaused, setReplayPaused] = useState<boolean>(false);
   const [replaySpeed, setReplaySpeed] = useState<number>(1);
@@ -80,33 +82,79 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const isFirstPageMount = useRef<boolean>(true);
+
+  // Reset replay block count when changing page during replay or review
+  useEffect(() => {
+    if (isFirstPageMount.current) {
+      isFirstPageMount.current = false;
+      return;
+    }
+    setReplayBlockCount(0);
+  }, [currentPageIdx]);
 
   // Parse blocks and paginate whenever raw input or relevant settings change
   useEffect(() => {
     const blocks = parseRawAIOutput(appState.rawInput);
-    const paginated = pageEngine.paginate(blocks);
+    const paginated = pageEngine.paginate(
+      blocks,
+      appState.handwriting.fontSize,
+      appState.paper.roughWorkColumn,
+      appState.handwriting.letterSpacing,
+      appState.handwriting.wordSpacing,
+      currentFont ?? undefined,
+      appState.paper.template,
+      appState.handwriting.snapToRuledLines ?? true
+    );
     setPagesData(paginated);
 
     if (paginated.length > 0) {
-      const p = new URLSearchParams(window.location.search).get('page');
-      if (p) {
-        const targetPage = Math.max(0, Math.min(paginated.length - 1, parseInt(p, 10) - 1));
-        setCurrentPageIdx(targetPage);
-      } else {
-        setCurrentPageIdx((prev) => Math.min(prev, paginated.length - 1));
-      }
+      setCurrentPageIdx((prev) => {
+        const validPrev = Number.isFinite(prev) ? prev : 0;
+        return Math.max(0, Math.min(validPrev, paginated.length - 1));
+      });
     }
-  }, [appState.rawInput, appState.handwriting.fontSize, appState.handwriting.randomSeed]);
+  }, [
+    appState.rawInput,
+    appState.handwriting.fontSize,
+    appState.handwriting.letterSpacing,
+    appState.handwriting.wordSpacing,
+    appState.handwriting.snapToRuledLines,
+    appState.handwriting.randomSeed,
+    appState.paper.roughWorkColumn,
+    appState.paper.template,
+    currentFont,
+    pageEngine,
+  ]);
 
   // Global keyboard shortcuts for smoother document navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Guard against open modals
+      if (
+        isVariationStudioOpen ||
+        exportModalFormat !== null ||
+        showKeyboardHelp ||
+        Boolean(document.querySelector('[role="dialog"], .fixed.inset-0'))
+      ) {
+        return;
+      }
+
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
           e.preventDefault();
           onRegenerateSeed();
         }
+        return;
+      }
+
+      // Ignore spacebar if focused on interactive buttons, selects, or links
+      if (
+        e.code === 'Space' &&
+        target &&
+        (target.tagName === 'BUTTON' || target.tagName === 'SELECT' || target.tagName === 'A')
+      ) {
         return;
       }
 
@@ -145,7 +193,15 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [pagesData.length, onRegenerateSeed, setAppState]);
+  }, [
+    pagesData.length,
+    isReplaying,
+    onRegenerateSeed,
+    setAppState,
+    isVariationStudioOpen,
+    exportModalFormat,
+    showKeyboardHelp,
+  ]);
 
   // Render current page onto canvas (when not in replay mode)
   useEffect(() => {
@@ -157,7 +213,7 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
     setIsRendering(true);
 
     const pageData = pagesData[currentPageIdx] || pagesData[0];
-    pageEngine.renderPage(canvas, pageData, appState, currentFont);
+    pageEngine.renderPage(canvas, pageData, appState, currentFont, undefined, allographs);
     setIsRendering(false);
   }, [
     currentPageIdx,
@@ -168,6 +224,7 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
     appState.paper,
     appState.handwriting.randomSeed,
     isReplaying,
+    allographs,
   ]);
 
   // Live Replay handwriting animation loop
@@ -180,14 +237,14 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
     const totalBlocks = pageData.blocks.length;
 
     // Render up to replayBlockCount
-    pageEngine.renderPage(canvas, pageData, appState, currentFont, replayBlockCount);
+    pageEngine.renderPage(canvas, pageData, appState, currentFont, replayBlockCount, allographs);
 
     if (replayPaused) return;
 
     const stepDelay = Math.max(90, Math.floor(450 / replaySpeed));
     const timer = setTimeout(() => {
       if (replayBlockCount < totalBlocks) {
-        if (!isAudioMuted) {
+        if (!writingAudio.getMuted()) {
           writingAudio.playStrokeSound(appState.pen.penStyle, 1.0);
         }
         setReplayBlockCount((prev) => prev + 1);
@@ -208,12 +265,12 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
     replayBlockCount,
     replayPaused,
     replaySpeed,
-    isAudioMuted,
     currentFont,
     currentPageIdx,
     pagesData,
     appState,
     pageEngine,
+    allographs,
   ]);
 
   // Automated batch rendering bridge for inspection & verification
@@ -226,7 +283,7 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
           const offCanvas = document.createElement('canvas');
           offCanvas.width = PAGE_WIDTH;
           offCanvas.height = PAGE_HEIGHT;
-          pageEngine.renderPage(offCanvas, pagesData[i], appState, currentFont);
+          pageEngine.renderPage(offCanvas, pagesData[i], appState, currentFont, undefined, allographs);
           const dataUrl = offCanvas.toDataURL('image/png');
           try {
             await fetch('http://localhost:9999/save', {
@@ -240,7 +297,7 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
         }
       })();
     }
-  }, [currentFont, pagesData.length]);
+  }, [currentFont, pagesData.length, allographs]);
 
   const handleZoomIn = () => {
     setAppState((p) => ({ ...p, zoom: Math.min(2.0, p.zoom + 0.15) }));
@@ -254,42 +311,6 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
     setAppState((p) => ({ ...p, zoom: 0.75 }));
   };
 
-  const handleExportPDF = async () => {
-    if (!currentFont || pagesData.length === 0) return;
-    setIsExporting(true);
-
-    try {
-      // Offscreen render each page at 1240 x 1754
-      const renderedCanvases: HTMLCanvasElement[] = [];
-
-      for (let i = 0; i < pagesData.length; i++) {
-        const offCanvas = document.createElement('canvas');
-        offCanvas.width = PAGE_WIDTH;
-        offCanvas.height = PAGE_HEIGHT;
-        pageEngine.renderPage(offCanvas, pagesData[i], appState, currentFont);
-        renderedCanvases.push(offCanvas);
-      }
-
-      await pageEngine.exportToPDF(
-        renderedCanvases,
-        appState.paper.assignmentTitle ? appState.paper.assignmentTitle.replace(/[^a-zA-Z0-9_-]/g, '_') : 'ScriptaMath_Assignment'
-      );
-
-      // Celebration confetti!
-      confetti({
-        particleCount: 80,
-        spread: 60,
-        origin: { y: 0.8 },
-      });
-
-      setExportSuccess(true);
-      setTimeout(() => setExportSuccess(false), 3500);
-    } catch (err) {
-      console.error('Failed to export PDF:', err);
-    } finally {
-      setIsExporting(false);
-    }
-  };
 
   const handleExportCurrentPNG = () => {
     const canvas = canvasRef.current;
@@ -592,7 +613,11 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
 
             {/* Audio Scratch Sound Toggle */}
             <button
-              onClick={() => setIsAudioMuted(!isAudioMuted)}
+              onClick={() => {
+                const nextMuted = !isAudioMuted;
+                setIsAudioMuted(nextMuted);
+                writingAudio.setMuted(nextMuted);
+              }}
               className={`p-1 rounded-md transition-colors ${
                 !isAudioMuted
                   ? 'text-emerald-400 hover:text-emerald-300 hover:bg-[#1a2133]'
@@ -637,25 +662,6 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
               height={PAGE_HEIGHT}
               className="w-full h-full rounded-sm block bg-white shadow-2xl"
             />
-
-            {/* Sticky Note Overlay (Handwritten style) */}
-            {appState.paper.showStickyNote && currentPageIdx === 0 && (
-              <div
-                className="absolute bottom-28 right-12 w-48 min-h-[140px] bg-yellow-200/95 text-amber-950 p-4 shadow-xl z-20 flex flex-col select-none rounded border border-yellow-300 pointer-events-none"
-                style={{
-                  transform: 'rotate(-2.5deg)',
-                  boxShadow: '3px 8px 24px rgba(0,0,0,0.18)',
-                }}
-              >
-                <div className="text-[10px] uppercase font-black tracking-widest text-yellow-800/60 mb-1">
-                  Note:
-                </div>
-                <div className="text-sm font-semibold leading-snug">
-                  {appState.paper.stickyNoteText || "Don't forget to submit before 5 PM!"}
-                </div>
-                <div className="absolute top-0 left-0 right-0 h-3 bg-yellow-300/40 rounded-t" />
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -669,6 +675,7 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
         appState={appState}
         currentFont={currentFont}
         pageEngine={pageEngine}
+        allographs={allographs}
       />
       {/* Multi-Sample Variation Studio Modal */}
       <VariationStudioModal
@@ -677,6 +684,7 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
         appState={appState}
         currentPageIdx={currentPageIdx}
         onAdoptVariation={handleAdoptVariation}
+        allographs={allographs}
       />
 
       {/* Keyboard Shortcuts Guide Modal */}

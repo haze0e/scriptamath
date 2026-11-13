@@ -191,6 +191,7 @@ Instead of requiring brittle API keys, ScriptaMath generates a specialized instr
 1. Turn cold textbook prose into spontaneous, natural student writing.
 2. Populate the **right-margin rough calculation column with real scratch math** (solving the hardcoded `'16 - 12 = 4'` in `pageEngine.ts`).
 3. Add margin notes and authentic typos.
+4. **No Unnatural Boxed Answers**: Explicitly forbids `\boxed{...}` since rigid bounding boxes look synthetic and computer-generated in student handwriting; concludes naturally with "Hence:", "Therefore,", "Ans:", or $\therefore$.
 
 #### 2.2 Updating Types in `src/types/index.ts`
 Extend `PaperScanSettings`:

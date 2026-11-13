@@ -3,12 +3,15 @@ export type HeadingColorPreset = 'red' | 'black' | 'blue' | 'custom';
 export type PenStyle = 'ballpoint' | 'gel' | 'fountain';
 export type PaperTemplateId = 'indian-ruled' | 'unruled-bond' | 'engineering-graph' | 'exam-booklet';
 export type ScanFilter = 'original' | 'natural-photo' | 'camscanner' | 'bw-xerox';
+export type CursiveMode = 'print' | 'semi-cursive' | 'vector-cursive';
+export type CursiveStylePreset = 'collegiate-flow' | 'neat-spencerian' | 'rushed-notes';
 export type HandwritingPersona =
   | 'chitesh-stem-notes'
   | 'boy-stem-cursive'
   | 'girl-neat-cursive'
   | 'exam-prep-rushed'
   | 'clean-lecture'
+  | 'true-cursive-notes'
   | 'custom'
   | (string & {});
 
@@ -53,11 +56,21 @@ export interface HandwritingStyleSettings {
   // Master Human Variance Bias Slider (0.0 to 10.0)
   humanVariance?: number; // 0.0 (ultra-neat lecture print) to 10.0 (rushed exam scribble), default 5.0
 
+  // True Cursive & Photorealistic Realism
+  cursiveMode?: CursiveMode; // 'print' | 'semi-cursive' | 'vector-cursive'
+  cursiveStyle?: CursiveStylePreset; // Stroke dictionary style when cursiveMode === 'vector-cursive'
+  cursivePressureContrast?: number; // 0.0 (monoline ballpoint) to 1.0 (expressive nib thick/thin)
+  delayedCrossAndDot?: boolean; // true: cross 't' and dot 'i'/'j' after completing word stroke
+  cursiveMathX?: boolean; // true: render math variable 'x' as opposing crescents ')('
+  snapToRuledLines?: boolean; // true: align baselines to integer ruled lines on lined paper
+  caretInsertionRate?: number; // 0.0 to 0.04: probability of '^' supralinear word/token insertions
+  coldStartStarvation?: boolean; // true: 3-5px faded entry ramp after pen lifts/new paragraphs
+
   // Authentic Student Margin & Answer Styles
   circledQuestionLabels?: boolean; // Draw hand-sketched circle around Q1, (1), (a), etc. in margin
   answerBubbleStyle?: 'box' | 'oval' | 'pill' | 'underline'; // Style for \boxed{} and final answers
   showAnswerCheckmarks?: boolean; // Append hand-sketched checkmark ✓ to final boxed answers
-  tableLines?: boolean; // Draw separation grid lines in tables (default: false — clean column layout without separation lines)
+  tableLines?: boolean; // Draw separation grid lines in tables (default: true — authentic student hand-drawn table borders and column lines)
   crossedZ?: boolean; // Authentic STEM crossbarred 'z' (ƶ) to distinguish from digit '2'
 }
 
@@ -94,6 +107,8 @@ export interface PaperScanSettings {
   highlighterMode?: 'none' | 'yellow' | 'green' | 'cyan' | 'pink'; // Authentic student highlighter overlay
   highlighterTarget?: 'boxed' | 'headings' | 'both';
   paperWarmth?: number; // 0.0 (crisp white) to 1.0 (aged warm exam ivory)
+  roughWorkInstrument?: 'pen' | 'pencil'; // Graphite pencil vs ballpoint for rough calculation column
+  deskEdgeShadow?: boolean; // Subtle dark desk border + contact shadow when perspectiveTilt > 0
 }
 
 export interface AppState {

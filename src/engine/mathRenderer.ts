@@ -30,7 +30,8 @@ export interface MathBox {
 export function measureFontStemWidth(font: opentype.Font, fontSize: number): number {
   // Sample glyphs with vertical stems: 'l', '1', 't', 'H'
   const glyph = font.charToGlyph('l');
-  const advance = glyph.advanceWidth ? (glyph.advanceWidth * fontSize) / font.unitsPerEm : fontSize * 0.25;
+  const unitsPerEm = font.unitsPerEm > 0 ? font.unitsPerEm : 1000;
+  const advance = glyph.advanceWidth ? (glyph.advanceWidth * fontSize) / unitsPerEm : fontSize * 0.25;
   // Authentic ballpoint stroke width ranges between 2.1px and 2.8px at fontSize 27
   return Math.max(2.1, Math.min(2.8, advance * 0.35));
 }
@@ -287,6 +288,43 @@ export class MathRenderer {
 
     ctx.restore();
     return len + 8 * scale;
+  }
+
+  public drawVectorArrow(
+    ctx: CanvasRenderingContext2D,
+    startX: number,
+    endX: number,
+    topY: number,
+    fontSize: number,
+    inkColor: string
+  ) {
+    const scale = fontSize / 28;
+    const minW = Math.max(endX - startX, 11 * scale);
+    const sx = startX;
+    const ex = startX + minW;
+    const y = topY - 3.5 * scale + (this.noise.random() - 0.5) * 1.0;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = Math.max(1.1, this.getBaseLineWidth(scale, 0.78));
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Horizontal shaft with subtle hand bow
+    ctx.beginPath();
+    ctx.moveTo(sx, y + 0.4 * scale);
+    ctx.quadraticCurveTo((sx + ex) * 0.5, y - 0.8 * scale, ex, y);
+    ctx.stroke();
+
+    // Arrowhead
+    const headLen = 4.2 * scale;
+    const headSpread = 2.6 * scale;
+    ctx.beginPath();
+    ctx.moveTo(ex - headLen, y - headSpread);
+    ctx.lineTo(ex, y);
+    ctx.lineTo(ex - headLen * 0.9, y + headSpread * 0.85);
+    ctx.stroke();
+    ctx.restore();
   }
 
   public drawTherefore(
@@ -2493,9 +2531,11 @@ export class MathRenderer {
     const scale = fontSize / 28;
     const style = this.getNextAllograph('sqrt', 3);
     const rootCheckWidth = (13.5 + this.noise.random() * 3.0) * scale;
-    const totalHeight = Math.max(fontSize * 1.1, contentHeight + 8 * scale);
-    const topY = baselineY - totalHeight + 4 * scale;
-    const bottomY = baselineY + Math.max(2 * scale, (contentDescent ?? 0) + 2 * scale);
+    const descent = Math.max(0, contentDescent ?? 0);
+    const contentAscent = Math.max(fontSize * 0.75, contentHeight - descent);
+    const topY = baselineY - Math.max(fontSize * 0.95, contentAscent + 8 * scale);
+    const bottomY = baselineY + Math.max(2 * scale, descent + 2 * scale);
+    const totalHeight = bottomY - topY;
 
     ctx.save();
     ctx.strokeStyle = inkColor;
@@ -3424,5 +3464,83 @@ export class MathRenderer {
 
     ctx.restore();
     return w + 4 * scale;
+  }
+
+  /**
+   * Procedural Opposing-Crescent Math Variable 'x' ):(
+   * Distinct from multiplication '×' and printed text 'x'.
+   */
+  public drawCursiveMathX(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string
+  ): number {
+    const scale = fontSize / 28;
+    const style = this.getNextAllograph('math_x', 2);
+    const w = (12.0 + this.noise.random() * 2.5) * scale;
+    const topY = y - fontSize * 0.44;
+    const botY = y;
+    const touchX = x + w * (0.48 + (this.noise.random() - 0.5) * 0.06);
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 0.92);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Left backward crescent ')'
+    ctx.beginPath();
+    ctx.moveTo(x + 1.2 * scale, topY + (style === 1 ? 1.5 : 0.5) * scale);
+    ctx.bezierCurveTo(
+      touchX + 1.4 * scale, topY - 0.5 * scale,
+      touchX + 1.2 * scale, botY + 0.5 * scale,
+      x + 0.5 * scale, botY - 0.5 * scale
+    );
+    ctx.stroke();
+
+    // Right forward crescent '(' kissing at waist with subtle exit flick
+    ctx.beginPath();
+    ctx.moveTo(x + w - 0.5 * scale, topY + 0.5 * scale);
+    ctx.bezierCurveTo(
+      touchX - 1.5 * scale, topY - 0.5 * scale,
+      touchX - 1.2 * scale, botY + 0.5 * scale,
+      x + w, botY - 1.2 * scale
+    );
+    ctx.stroke();
+
+    ctx.restore();
+    return w + 3.5 * scale;
+  }
+
+  /**
+   * Hand-sketched supralinear insertion caret '^' at baseline.
+   */
+  public drawCaretMark(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string
+  ): number {
+    const scale = fontSize / 28;
+    const w = 11 * scale;
+    const h = 8 * scale;
+    const baseY = y + 3 * scale;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = Math.max(1.1, 1.45 * scale);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x, baseY);
+    ctx.lineTo(x + w * 0.5 + (this.noise.random() - 0.5) * 1.2, baseY - h);
+    ctx.lineTo(x + w, baseY + (this.noise.random() - 0.5) * 1.2);
+    ctx.stroke();
+    ctx.restore();
+
+    return w + 3 * scale;
   }
 }
