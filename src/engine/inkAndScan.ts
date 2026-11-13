@@ -66,7 +66,7 @@ export class InkAndScanPipeline {
     // Spiral notebook punch holes on left margin (default true for unruled-bond, or if explicitly enabled)
     const shouldDrawSpiral = paper.spiralHoles ?? (paper.template === 'unruled-bond');
     if (shouldDrawSpiral) {
-      this.drawSpiralNotebookHoles(ctx, width, height);
+      this.drawSpiralNotebookHoles(ctx, width, height, pageIndex);
     }
 
     if (paper.template === 'unruled-bond' && paper.showMarginGuides) {
@@ -370,100 +370,154 @@ export class InkAndScanPipeline {
 
   /**
    * Realistic Spiral Notebook Margin:
-   * - Punched holes along left margin (pitch ~45px, radius 8.5px)
-   * - Dark notebook backboard / desk shadow showing through holes
-   * - Paper cut thickness rim highlights and soft top-left inner shadow
-   * - Wire binding coils looping through holes to outer page edge
-   * - Subtle micro-perforation tear guide line
+   * - Punched holes along left margin with per-page vertical offset and mechanical punch jitter
+   * - Helical metal binder coil rings with natural pitch angle, wire gauge reflection, and loop curve variation
+   * - Visible layered under-sheets and dark binder backing showing through holes
+   * - Paper cut thickness rim highlights and soft inner shadow
+   * - Subtle micro-perforation tear guide line with organic dash phase
    */
-  private drawSpiralNotebookHoles(ctx: CanvasRenderingContext2D, width: number, height: number) {
+  private drawSpiralNotebookHoles(
+    ctx: CanvasRenderingContext2D,
+    _width: number,
+    height: number,
+    _pageIndex: number = 0
+  ) {
     ctx.save();
-    const holeX = 46;
-    const holeRadius = 8.5;
-    const startY = 70;
-    const endY = height - 70;
-    const pitch = 45;
 
-    // 1. Subtle micro-perforation line down the margin (tear guide)
-    ctx.strokeStyle = 'rgba(175, 180, 195, 0.35)';
-    ctx.lineWidth = 0.8;
-    ctx.setLineDash([2, 5]);
+    // 1. Organic per-page margin and vertical registration drift
+    // In real spiral notebooks, individual sheets have ±2-4px horizontal alignment drift
+    // and ±4-10px vertical registration offset along the coil axis.
+    const baseHoleX = 46 + (this.noise.random() - 0.48) * 5;
+    const baseRadius = 8.4 + (this.noise.random() - 0.5) * 0.7;
+    const startY = 66 + (this.noise.random() - 0.45) * 12;
+    const endY = height - 60;
+    const pitch = 45 + (this.noise.random() - 0.5) * 0.8;
+
+    // 2. Subtle micro-perforation line down the margin (tear guide)
+    const perfX = baseHoleX + 36 + (this.noise.random() - 0.5) * 2.5;
+    const dashPhase = (this.noise.random() * 8);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(170, 175, 190, 0.32)';
+    ctx.lineWidth = 0.85;
+    ctx.lineCap = 'butt';
+    ctx.setLineDash([2.2, 5.0]);
+    ctx.lineDashOffset = dashPhase;
     ctx.beginPath();
-    ctx.moveTo(82, 30);
-    ctx.lineTo(82, height - 30);
+    ctx.moveTo(perfX, 25);
+    ctx.lineTo(perfX, height - 25);
     ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.restore();
 
-    // 2. Punched holes & metal spiral rings
+    // 3. Punched holes & metal spiral helical coils
+    let holeIndex = 0;
     for (let y = startY; y <= endY; y += pitch) {
-      // Background behind hole (desk/under-page dark surface)
-      ctx.fillStyle = '#22252a';
+      holeIndex++;
+      // Mechanical punch jitter per hole
+      const jx = (this.noise.random() - 0.5) * 1.1;
+      const jy = (this.noise.random() - 0.5) * 1.2;
+      const hx = baseHoleX + jx;
+      const hy = y + jy;
+      const hr = baseRadius + (this.noise.random() - 0.5) * 0.4;
+
+      // 3.1. Layered under-page edge showing through punched hole
+      // Sheets beneath are slightly misaligned by ~1-3px, showing white/ivory crescent of under-sheets
+      ctx.fillStyle = '#1c1f24'; // deep dark desk/binder backing
       ctx.beginPath();
-      ctx.arc(holeX, y, holeRadius, 0, Math.PI * 2);
+      ctx.arc(hx, hy, hr, 0, Math.PI * 2);
       ctx.fill();
 
-      // Soft inner drop-shadow at top-left inside hole
+      // Subtle under-page crescent highlight inside hole
+      const underPageOffset = 1.2 + (this.noise.random() - 0.5) * 0.8;
+      ctx.fillStyle = 'rgba(238, 235, 226, 0.45)';
+      ctx.beginPath();
+      ctx.arc(hx - underPageOffset, hy + 0.8, hr * 0.92, 0.6 * Math.PI, 1.4 * Math.PI);
+      ctx.arc(hx, hy, hr * 0.84, 1.4 * Math.PI, 0.6 * Math.PI, true);
+      ctx.fill();
+
+      // 3.2. Soft inner drop-shadow at top-left inside hole
       const innerShadow = ctx.createRadialGradient(
-        holeX - 2,
-        y - 2,
-        holeRadius * 0.2,
-        holeX,
-        y,
-        holeRadius
+        hx - 2.5,
+        hy - 2.5,
+        hr * 0.15,
+        hx,
+        hy,
+        hr
       );
-      innerShadow.addColorStop(0, 'rgba(0, 0, 0, 0.6)');
-      innerShadow.addColorStop(0.7, 'rgba(15, 18, 22, 0.4)');
-      innerShadow.addColorStop(1, 'rgba(34, 37, 42, 0)');
+      innerShadow.addColorStop(0, 'rgba(0, 0, 0, 0.65)');
+      innerShadow.addColorStop(0.65, 'rgba(15, 18, 22, 0.42)');
+      innerShadow.addColorStop(1, 'rgba(28, 31, 36, 0)');
       ctx.fillStyle = innerShadow;
       ctx.beginPath();
-      ctx.arc(holeX, y, holeRadius, 0, Math.PI * 2);
+      ctx.arc(hx, hy, hr, 0, Math.PI * 2);
       ctx.fill();
 
-      // Paper cut thickness highlight on bottom-right rim of the punched hole
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
-      ctx.lineWidth = 1.0;
+      // 3.3. Paper cut thickness highlight on bottom-right rim of the punched hole
+      ctx.strokeStyle = `rgba(255, 255, 255, ${0.78 + this.noise.random() * 0.15})`;
+      ctx.lineWidth = 1.05;
       ctx.beginPath();
-      ctx.arc(holeX, y, holeRadius, 0.1 * Math.PI, 0.9 * Math.PI);
+      ctx.arc(hx, hy, hr, 0.08 * Math.PI, 0.92 * Math.PI);
       ctx.stroke();
 
-      // Dark paper cut shadow on top-left rim
-      ctx.strokeStyle = 'rgba(60, 60, 65, 0.45)';
-      ctx.lineWidth = 0.8;
+      // 3.4. Dark paper cut shadow on top-left rim
+      ctx.strokeStyle = 'rgba(50, 50, 56, 0.45)';
+      ctx.lineWidth = 0.85;
       ctx.beginPath();
-      ctx.arc(holeX, y, holeRadius, 1.0 * Math.PI, 1.8 * Math.PI);
+      ctx.arc(hx, hy, hr, 1.02 * Math.PI, 1.88 * Math.PI);
       ctx.stroke();
 
-      // Metal coil wire loop curving from behind hole to outer edge
+      // 3.5. Helical metal coil wire loop curving through hole to outer notebook edge
+      // Loop arc, entry and exit coordinates vary with helical angle and holeIndex
+      const loopOuterX = 4 + (this.noise.random() - 0.5) * 3;
+      const wireDrop = pitch * 0.18 + (this.noise.random() - 0.5) * 1.5;
+      const wireThickness = 2.1 + (this.noise.random() - 0.5) * 0.25;
+
       ctx.save();
-      ctx.strokeStyle = '#383c44';
-      ctx.lineWidth = 2.2;
+      // Main metal wire core (dark metallic pewter / graphite)
+      ctx.strokeStyle = '#32363e';
+      ctx.lineWidth = wireThickness;
       ctx.lineCap = 'round';
       ctx.beginPath();
-      ctx.moveTo(holeX + 1, y - 1);
+      ctx.moveTo(hx + 1.2, hy - 1.2);
       ctx.bezierCurveTo(
-        holeX - 18,
-        y - 4,
-        14,
-        y - 3,
-        6,
-        y + 2
+        hx - 18,
+        hy - 4 + wireDrop * 0.2,
+        loopOuterX + 8,
+        hy - 3 + wireDrop * 0.7,
+        loopOuterX,
+        hy + wireDrop
       );
       ctx.stroke();
 
-      // Wire highlight reflection
-      ctx.strokeStyle = '#858d9a';
-      ctx.lineWidth = 0.9;
+      // Wire metallic specular highlight reflection along the outer loop crown
+      ctx.strokeStyle = '#8b93a2';
+      ctx.lineWidth = 0.85;
       ctx.beginPath();
-      ctx.moveTo(holeX - 2, y - 2);
+      ctx.moveTo(hx - 2, hy - 2.5);
       ctx.bezierCurveTo(
-        holeX - 16,
-        y - 5,
-        16,
-        y - 4,
-        8,
-        y + 1
+        hx - 16,
+        hy - 5.2 + wireDrop * 0.2,
+        loopOuterX + 10,
+        hy - 4.2 + wireDrop * 0.7,
+        loopOuterX + 2,
+        hy + wireDrop - 1.0
       );
       ctx.stroke();
+
+      // Subtle warm desk reflection on underside of coil loop
+      ctx.strokeStyle = 'rgba(215, 195, 170, 0.22)';
+      ctx.lineWidth = 0.6;
+      ctx.beginPath();
+      ctx.moveTo(hx - 6, hy + 0.5);
+      ctx.bezierCurveTo(
+        hx - 17,
+        hy - 1.5 + wireDrop * 0.3,
+        loopOuterX + 8,
+        hy - 0.5 + wireDrop * 0.8,
+        loopOuterX + 1,
+        hy + wireDrop + 1.2
+      );
+      ctx.stroke();
+
       ctx.restore();
     }
 
