@@ -2183,15 +2183,17 @@ export class MathRenderer {
         ctx.lineTo(x + braceW * 0.20, cuspY + 3 * scale);
         ctx.quadraticCurveTo(x + braceW * 0.20, bottomY, outerX + 1.5 * scale, bottomY);
       } else if (style === 2) {
-        // Fluid cursive rounded {
+        // Fluid cursive rounded { with crisp outward cusp
         ctx.moveTo(outerX, topY + 1 * scale);
-        ctx.bezierCurveTo(x + braceW * 0.35, topY, x + braceW * 0.30, cuspY - 4 * scale, cuspX, cuspY);
-        ctx.bezierCurveTo(x + braceW * 0.30, cuspY + 4 * scale, x + braceW * 0.35, bottomY, outerX + 1 * scale, bottomY - 1 * scale);
+        ctx.quadraticCurveTo(x + braceW * 0.35, topY, x + braceW * 0.25, cuspY - 2.5 * scale);
+        ctx.lineTo(cuspX - 1.5 * scale, cuspY);
+        ctx.lineTo(x + braceW * 0.25, cuspY + 2.5 * scale);
+        ctx.quadraticCurveTo(x + braceW * 0.35, bottomY, outerX + 1 * scale, bottomY - 1 * scale);
       } else {
         // Classic asymmetric lobe {
         ctx.moveTo(outerX, topY + (this.noise.random() - 0.5) * 1.5 * scale);
         ctx.quadraticCurveTo(x + braceW * 0.25, topY + 1 * scale, x + braceW * 0.28, topY + totalH * 0.22);
-        ctx.bezierCurveTo(x + braceW * 0.28, cuspY - 3 * scale, x + braceW * 0.10, cuspY - 1 * scale, cuspX, cuspY);
+        ctx.bezierCurveTo(x + braceW * 0.28, cuspY - 3 * scale, x + braceW * 0.10, cuspY - 1 * scale, cuspX - 1.2 * scale, cuspY);
         ctx.bezierCurveTo(x + braceW * 0.10, cuspY + 2 * scale, x + braceW * 0.25, cuspY + 5 * scale, x + braceW * 0.25, topY + totalH * 0.75);
         ctx.quadraticCurveTo(x + braceW * 0.22, bottomY - 1 * scale, outerX + 1.5 * scale, bottomY + (this.noise.random() - 0.5) * 1.5 * scale);
       }
@@ -2200,19 +2202,21 @@ export class MathRenderer {
         // Rapid crisp-cusp }
         ctx.moveTo(outerX - 1 * scale, topY);
         ctx.quadraticCurveTo(x + braceW * 0.80, topY, x + braceW * 0.80, cuspY - 3 * scale);
-        ctx.lineTo(cuspX + 0.5 * scale, cuspY);
+        ctx.lineTo(cuspX + 1.5 * scale, cuspY);
         ctx.lineTo(x + braceW * 0.80, cuspY + 3 * scale);
         ctx.quadraticCurveTo(x + braceW * 0.80, bottomY, outerX - 1.5 * scale, bottomY);
       } else if (style === 2) {
-        // Fluid cursive rounded }
+        // Fluid cursive rounded } with crisp outward cusp
         ctx.moveTo(outerX, topY + 1 * scale);
-        ctx.bezierCurveTo(x + braceW * 0.65, topY, x + braceW * 0.70, cuspY - 4 * scale, cuspX, cuspY);
-        ctx.bezierCurveTo(x + braceW * 0.70, cuspY + 4 * scale, x + braceW * 0.65, bottomY, outerX - 1 * scale, bottomY - 1 * scale);
+        ctx.quadraticCurveTo(x + braceW * 0.65, topY, x + braceW * 0.75, cuspY - 2.5 * scale);
+        ctx.lineTo(cuspX + 1.5 * scale, cuspY);
+        ctx.lineTo(x + braceW * 0.75, cuspY + 2.5 * scale);
+        ctx.quadraticCurveTo(x + braceW * 0.65, bottomY, outerX - 1 * scale, bottomY - 1 * scale);
       } else {
         // Classic asymmetric lobe }
         ctx.moveTo(outerX, topY + (this.noise.random() - 0.5) * 1.5 * scale);
         ctx.quadraticCurveTo(x + braceW * 0.75, topY + 1 * scale, x + braceW * 0.72, topY + totalH * 0.22);
-        ctx.bezierCurveTo(x + braceW * 0.72, cuspY - 3 * scale, x + braceW * 0.90, cuspY - 1 * scale, cuspX, cuspY);
+        ctx.bezierCurveTo(x + braceW * 0.72, cuspY - 3 * scale, x + braceW * 0.90, cuspY - 1 * scale, cuspX + 1.2 * scale, cuspY);
         ctx.bezierCurveTo(x + braceW * 0.90, cuspY + 2 * scale, x + braceW * 0.75, cuspY + 5 * scale, x + braceW * 0.75, topY + totalH * 0.75);
         ctx.quadraticCurveTo(x + braceW * 0.78, bottomY - 1 * scale, outerX - 1.5 * scale, bottomY + (this.noise.random() - 0.5) * 1.5 * scale);
       }
@@ -3405,19 +3409,21 @@ export class MathRenderer {
   }
 
   /**
-   * Procedural Set Union (∪)
+   * Procedural Set Union (∪ or \bigcup)
    */
   public drawCup(
     ctx: CanvasRenderingContext2D,
     x: number,
     y: number,
     fontSize: number,
-    inkColor: string
+    inkColor: string,
+    isBig = false
   ): number {
-    const scale = fontSize / 28;
-    const w = 12 * scale;
-    const topY = y - fontSize * 0.45;
-    const bottomY = y - 1 * scale;
+    const sizeMultiplier = isBig ? 1.35 : 1.0;
+    const scale = (fontSize * sizeMultiplier) / 28;
+    const w = 14 * scale;
+    const topY = y - fontSize * (isBig ? 0.72 : 0.45);
+    const bottomY = y + fontSize * (isBig ? 0.12 : -0.04);
 
     ctx.save();
     ctx.strokeStyle = inkColor;
@@ -3436,19 +3442,21 @@ export class MathRenderer {
   }
 
   /**
-   * Procedural Set Intersection (∩)
+   * Procedural Set Intersection (∩ or \bigcap)
    */
   public drawCap(
     ctx: CanvasRenderingContext2D,
     x: number,
     y: number,
     fontSize: number,
-    inkColor: string
+    inkColor: string,
+    isBig = false
   ): number {
-    const scale = fontSize / 28;
-    const w = 12 * scale;
-    const topY = y - fontSize * 0.45;
-    const bottomY = y - 1 * scale;
+    const sizeMultiplier = isBig ? 1.35 : 1.0;
+    const scale = (fontSize * sizeMultiplier) / 28;
+    const w = 14 * scale;
+    const topY = y - fontSize * (isBig ? 0.72 : 0.45);
+    const bottomY = y + fontSize * (isBig ? 0.12 : -0.04);
 
     ctx.save();
     ctx.strokeStyle = inkColor;
@@ -3460,6 +3468,440 @@ export class MathRenderer {
     ctx.lineTo(x + 1 * scale, topY + 3 * scale);
     ctx.quadraticCurveTo(x + w * 0.5, topY - 1 * scale, x + w - 1 * scale, topY + 3 * scale);
     ctx.lineTo(x + w - 1 * scale, bottomY);
+    ctx.stroke();
+
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  /**
+   * Procedural Maps-to Arrow (↦)
+   */
+  public drawMapsTo(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string
+  ): number {
+    const scale = fontSize / 28;
+    const len = 18 * scale;
+    const centerY = y - fontSize * 0.35;
+    const barH = 8 * scale;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = Math.max(1.3, 1.7 * scale);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Left vertical stop tick
+    ctx.beginPath();
+    ctx.moveTo(x + 1.5 * scale, centerY - barH * 0.5);
+    ctx.lineTo(x + 1.5 * scale, centerY + barH * 0.5);
+    ctx.stroke();
+
+    // Horizontal shaft
+    ctx.beginPath();
+    ctx.moveTo(x + 1.5 * scale, centerY);
+    ctx.lineTo(x + len, centerY);
+    ctx.stroke();
+
+    // Arrowhead >
+    const headLen = 5.5 * scale;
+    ctx.beginPath();
+    ctx.moveTo(x + len - headLen, centerY - 4 * scale);
+    ctx.lineTo(x + len, centerY);
+    ctx.lineTo(x + len - headLen, centerY + 4 * scale);
+    ctx.stroke();
+
+    ctx.restore();
+    return len + 5 * scale;
+  }
+
+  /**
+   * Procedural Vertical Arrow (↑ or ↓)
+   */
+  public drawVerticalArrow(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string,
+    isUp: boolean
+  ): number {
+    const scale = fontSize / 28;
+    const topY = y - fontSize * 0.70;
+    const bottomY = y - fontSize * 0.05;
+    const midX = x + 6 * scale;
+    const headLen = 4.5 * scale;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = Math.max(1.3, 1.7 * scale);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Vertical shaft
+    ctx.beginPath();
+    ctx.moveTo(midX, topY);
+    ctx.lineTo(midX, bottomY);
+    ctx.stroke();
+
+    // Arrowhead
+    ctx.beginPath();
+    if (isUp) {
+      ctx.moveTo(midX - headLen, topY + headLen);
+      ctx.lineTo(midX, topY);
+      ctx.lineTo(midX + headLen, topY + headLen);
+    } else {
+      ctx.moveTo(midX - headLen, bottomY - headLen);
+      ctx.lineTo(midX, bottomY);
+      ctx.lineTo(midX + headLen, bottomY - headLen);
+    }
+    ctx.stroke();
+
+    ctx.restore();
+    return 12 * scale;
+  }
+
+  /**
+   * Procedural Empty Set Symbol (∅)
+   */
+  public drawEmptySet(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string
+  ): number {
+    const scale = fontSize / 28;
+    const w = 12 * scale;
+    const centerY = y - fontSize * 0.32;
+    const rx = 5.2 * scale;
+    const ry = 7.0 * scale;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
+    ctx.lineCap = 'round';
+
+    // Oval zero/circle
+    ctx.beginPath();
+    ctx.ellipse(x + rx + 1 * scale, centerY, rx, ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Diagonal forward slash passing completely through
+    ctx.beginPath();
+    ctx.moveTo(x - 0.5 * scale, centerY + ry * 1.3);
+    ctx.lineTo(x + rx * 2 + 2.5 * scale, centerY - ry * 1.3);
+    ctx.stroke();
+
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  /**
+   * Procedural Wedge / Logical AND / Minimum (∧)
+   */
+  public drawWedge(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string
+  ): number {
+    const scale = fontSize / 28;
+    const w = 11 * scale;
+    const topY = y - fontSize * 0.50;
+    const bottomY = y - fontSize * 0.05;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 1.0);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    ctx.beginPath();
+    ctx.moveTo(x + 1 * scale, bottomY);
+    ctx.lineTo(x + w * 0.5, topY);
+    ctx.lineTo(x + w - 1 * scale, bottomY);
+    ctx.stroke();
+
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  /**
+   * Procedural Vee / Logical OR / Maximum (∨)
+   */
+  public drawVee(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string
+  ): number {
+    const scale = fontSize / 28;
+    const w = 11 * scale;
+    const topY = y - fontSize * 0.50;
+    const bottomY = y - fontSize * 0.05;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 1.0);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    ctx.beginPath();
+    ctx.moveTo(x + 1 * scale, topY);
+    ctx.lineTo(x + w * 0.5, bottomY);
+    ctx.lineTo(x + w - 1 * scale, topY);
+    ctx.stroke();
+
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  /**
+   * Procedural Subset / Superset (⊂, ⊆, ⊃, ⊇)
+   */
+  public drawSubset(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string,
+    hasEqual = false,
+    isSuperset = false
+  ): number {
+    const scale = fontSize / 28;
+    const w = 12 * scale;
+    const topY = y - fontSize * (hasEqual ? 0.48 : 0.42);
+    const bottomY = y - fontSize * (hasEqual ? 0.16 : 0.06);
+    const midY = (topY + bottomY) * 0.5;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    ctx.beginPath();
+    if (!isSuperset) {
+      // ⊂ opening to the right
+      ctx.moveTo(x + w - 1 * scale, topY);
+      ctx.bezierCurveTo(x + w * 0.35, topY, x + 1 * scale, midY - 2 * scale, x + 1 * scale, midY);
+      ctx.bezierCurveTo(x + 1 * scale, midY + 2 * scale, x + w * 0.35, bottomY, x + w - 1 * scale, bottomY);
+    } else {
+      // ⊃ opening to the left
+      ctx.moveTo(x + 1 * scale, topY);
+      ctx.bezierCurveTo(x + w * 0.65, topY, x + w - 1 * scale, midY - 2 * scale, x + w - 1 * scale, midY);
+      ctx.bezierCurveTo(x + w - 1 * scale, midY + 2 * scale, x + w * 0.65, bottomY, x + 1 * scale, bottomY);
+    }
+    ctx.stroke();
+
+    if (hasEqual) {
+      const eqY = y - fontSize * 0.02;
+      ctx.beginPath();
+      ctx.moveTo(x + 1 * scale, eqY);
+      ctx.lineTo(x + w - 1 * scale, eqY);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+    return w + 5 * scale;
+  }
+
+  /**
+   * Procedural Equivalence Operator (≡)
+   */
+  public drawEquiv(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string
+  ): number {
+    const scale = fontSize / 28;
+    const w = 13 * scale;
+    const gap = 3.5 * scale;
+    const midY = y - fontSize * 0.32;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
+    ctx.lineCap = 'round';
+
+    for (const off of [-gap, 0, gap]) {
+      ctx.beginPath();
+      ctx.moveTo(x + 1 * scale, midY + off);
+      ctx.lineTo(x + w - 1 * scale, midY + off);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  /**
+   * Procedural Perpendicular Symbol (⊥)
+   */
+  public drawPerp(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string
+  ): number {
+    const scale = fontSize / 28;
+    const w = 12 * scale;
+    const topY = y - fontSize * 0.55;
+    const bottomY = y - fontSize * 0.05;
+    const midX = x + w * 0.5;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 1.0);
+    ctx.lineCap = 'round';
+
+    // Horizontal baseline
+    ctx.beginPath();
+    ctx.moveTo(x + 1 * scale, bottomY);
+    ctx.lineTo(x + w - 1 * scale, bottomY);
+    ctx.stroke();
+
+    // Vertical upright
+    ctx.beginPath();
+    ctx.moveTo(midX, bottomY);
+    ctx.lineTo(midX, topY);
+    ctx.stroke();
+
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  /**
+   * Procedural Parallel Symbol (∥)
+   */
+  public drawParallel(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string
+  ): number {
+    const scale = fontSize / 28;
+    const w = 10 * scale;
+    const topY = y - fontSize * 0.55;
+    const bottomY = y - fontSize * 0.05;
+    const gap = 3.5 * scale;
+    const midX = x + w * 0.5;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 1.0);
+    ctx.lineCap = 'round';
+
+    ctx.beginPath();
+    ctx.moveTo(midX - gap * 0.5, topY);
+    ctx.lineTo(midX - gap * 0.5, bottomY);
+    ctx.moveTo(midX + gap * 0.5, topY);
+    ctx.lineTo(midX + gap * 0.5, bottomY);
+    ctx.stroke();
+
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  /**
+   * Procedural Proportionality Symbol (∝)
+   */
+  public drawPropto(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string
+  ): number {
+    const scale = fontSize / 28;
+    const w = 14 * scale;
+    const centerY = y - fontSize * 0.32;
+    const rx = 3.6 * scale;
+    const ry = 4.2 * scale;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
+    ctx.lineCap = 'round';
+
+    // Left loop
+    ctx.beginPath();
+    ctx.ellipse(x + rx + 1 * scale, centerY, rx, ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Right open arms (infinity with open right end)
+    ctx.beginPath();
+    ctx.moveTo(x + rx * 2 + 1 * scale, centerY);
+    ctx.quadraticCurveTo(x + w * 0.8, centerY - ry, x + w, centerY - ry * 0.8);
+    ctx.moveTo(x + rx * 2 + 1 * scale, centerY);
+    ctx.quadraticCurveTo(x + w * 0.8, centerY + ry, x + w, centerY + ry * 0.8);
+    ctx.stroke();
+
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  /**
+   * Procedural Composition Circle (∘)
+   */
+  public drawCirc(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string
+  ): number {
+    const scale = fontSize / 28;
+    const r = 3.0 * scale;
+    const centerY = y - fontSize * 0.32;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
+
+    ctx.beginPath();
+    ctx.arc(x + r + 2 * scale, centerY, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.restore();
+    return r * 2 + 6 * scale;
+  }
+
+  /**
+   * Procedural Negation Symbol (¬)
+   */
+  public drawNeg(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string
+  ): number {
+    const scale = fontSize / 28;
+    const w = 10 * scale;
+    const centerY = y - fontSize * 0.32;
+    const drop = 4.5 * scale;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 1.0);
+    ctx.lineCap = 'round';
+
+    ctx.beginPath();
+    ctx.moveTo(x + 1 * scale, centerY);
+    ctx.lineTo(x + w, centerY);
+    ctx.lineTo(x + w, centerY + drop);
     ctx.stroke();
 
     ctx.restore();

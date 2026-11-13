@@ -540,7 +540,7 @@ export class PageEngine {
 
       const allScratch = paper.customRoughWork && paper.customRoughWork.length > 0
         ? paper.customRoughWork
-        : ['14 · 6 = 84', '84 - 23 = 61', '√61 ≈ 7.81'];
+        : [];
 
       // Parse structured scratch items and assign to questions
       const parsedItems = allScratch.map((raw, idx) => {
@@ -589,12 +589,7 @@ export class PageEngine {
         return Math.floor(item.origIdx / 3) === (pageData.pageNumber - 1);
       });
 
-      // If no question matches and it's page 1, show first 2-3 items as default scratch
-      const itemsToRender = pageItems.length > 0
-        ? pageItems
-        : (pageData.pageNumber === 1 && !parsedItems.some((it) => it.qNum !== undefined))
-        ? parsedItems.slice(0, 3)
-        : [];
+      const itemsToRender = pageItems.length > 0 ? pageItems : [];
 
       // Organic vertical distribution across the page height (eliminates bunched-at-top compression)
       const count = itemsToRender.length;
@@ -1975,8 +1970,24 @@ export class PageEngine {
     if (symbol === 'ℒ') return this.mathRenderer.drawLaplaceL(ctx, x, y, fontSize, inkColor);
     if (symbol === '∀' || symbol === '\\forall') return this.mathRenderer.drawForall(ctx, x, y, fontSize, inkColor);
     if (symbol === '∃' || symbol === '\\exists') return this.mathRenderer.drawExists(ctx, x, y, fontSize, inkColor);
-    if (symbol === '∪' || symbol === '\\cup') return this.mathRenderer.drawCup(ctx, x, y, fontSize, inkColor);
-    if (symbol === '∩' || symbol === '\\cap') return this.mathRenderer.drawCap(ctx, x, y, fontSize, inkColor);
+    if (symbol === '∪' || symbol === '\\cup' || symbol === '\\bigcup' || symbol === '⋃') return this.mathRenderer.drawCup(ctx, x, y, fontSize, inkColor);
+    if (symbol === '∩' || symbol === '\\cap' || symbol === '\\bigcap' || symbol === '⋂') return this.mathRenderer.drawCap(ctx, x, y, fontSize, inkColor);
+    if (symbol === '↦' || symbol === '\\mapsto') return this.mathRenderer.drawMapsTo(ctx, x, y, fontSize, inkColor);
+    if (symbol === '↑' || symbol === '\\uparrow') return this.mathRenderer.drawVerticalArrow(ctx, x, y, fontSize, inkColor, true);
+    if (symbol === '↓' || symbol === '\\downarrow') return this.mathRenderer.drawVerticalArrow(ctx, x, y, fontSize, inkColor, false);
+    if (symbol === '∅' || symbol === '\\emptyset' || symbol === '\\varnothing') return this.mathRenderer.drawEmptySet(ctx, x, y, fontSize, inkColor);
+    if (symbol === '∧' || symbol === '\\wedge' || symbol === '\\land') return this.mathRenderer.drawWedge(ctx, x, y, fontSize, inkColor);
+    if (symbol === '∨' || symbol === '\\vee' || symbol === '\\lor') return this.mathRenderer.drawVee(ctx, x, y, fontSize, inkColor);
+    if (symbol === '⊆' || symbol === '\\subseteq') return this.mathRenderer.drawSubset(ctx, x, y, fontSize, inkColor, true, false);
+    if (symbol === '⊇' || symbol === '\\supseteq') return this.mathRenderer.drawSubset(ctx, x, y, fontSize, inkColor, true, true);
+    if (symbol === '⊂' || symbol === '\\subset') return this.mathRenderer.drawSubset(ctx, x, y, fontSize, inkColor, false, false);
+    if (symbol === '⊃' || symbol === '\\supset') return this.mathRenderer.drawSubset(ctx, x, y, fontSize, inkColor, false, true);
+    if (symbol === '≡' || symbol === '\\equiv') return this.mathRenderer.drawEquiv(ctx, x, y, fontSize, inkColor);
+    if (symbol === '⊥' || symbol === '\\perp') return this.mathRenderer.drawPerp(ctx, x, y, fontSize, inkColor);
+    if (symbol === '∥' || symbol === '\\parallel') return this.mathRenderer.drawParallel(ctx, x, y, fontSize, inkColor);
+    if (symbol === '∝' || symbol === '\\propto') return this.mathRenderer.drawPropto(ctx, x, y, fontSize, inkColor);
+    if (symbol === '∘' || symbol === '\\circ') return this.mathRenderer.drawCirc(ctx, x, y, fontSize, inkColor);
+    if (symbol === '¬' || symbol === '\\neg') return this.mathRenderer.drawNeg(ctx, x, y, fontSize, inkColor);
     if (symbol === '∼' || symbol === '~' || symbol === '\\sim') return this.mathRenderer.drawSim(ctx, x, y, fontSize, inkColor);
     if (symbol === 'Γ' || symbol === '\\Gamma') return this.mathRenderer.drawGamma(ctx, x, y, fontSize, inkColor);
     if (symbol === '/') {
@@ -2084,7 +2095,15 @@ export class PageEngine {
     isBigDelimiter?: boolean
   ): number {
     let currX = x;
-    const isLim = typeof base === 'string' && base === 'lim';
+    const isLim =
+      typeof base === 'string' &&
+      (base === 'lim' ||
+        base === 'sup' ||
+        base === 'inf' ||
+        base === 'max' ||
+        base === 'min' ||
+        base === 'limsup' ||
+        base === 'liminf');
     let baseWidth = 0;
 
     // Draw base
@@ -2092,8 +2111,8 @@ export class PageEngine {
       if (base === '') {
         // Empty base: attached directly to delimiter
         baseWidth = 0;
-      } else if (base === 'lim') {
-        baseWidth = this.renderWordOrChars(ctx, font, 'lim', currX, y, fontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
+      } else if (isLim) {
+        baseWidth = this.renderWordOrChars(ctx, font, base, currX, y, fontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
         currX += baseWidth;
       } else if (base === 'Δ') {
         baseWidth = this.mathRenderer.drawDelta(ctx, currX, y, fontSize, inkColor);
@@ -2237,11 +2256,15 @@ export class PageEngine {
 
       return Math.max(intWidth + 6, lowerAdvance + 6, upperAdvance + 6);
     } else {
-      // \sum or \prod
+      // \sum, \prod, \bigcup, or \bigcap
       const opWidth =
         token.symbol === '\\sum'
           ? this.mathRenderer.drawSummation(ctx, x, y, fontSize, inkColor, true)
-          : this.mathRenderer.drawProduct(ctx, x, y, fontSize, inkColor, true);
+          : token.symbol === '\\prod'
+          ? this.mathRenderer.drawProduct(ctx, x, y, fontSize, inkColor, true)
+          : token.symbol === '\\bigcup'
+          ? this.mathRenderer.drawCup(ctx, x, y, fontSize, inkColor, true)
+          : this.mathRenderer.drawCap(ctx, x, y, fontSize, inkColor, true);
 
       const lowerWidth = token.lower ? this.estimateTokensWidth(font, token.lower, limitFontSize) : 0;
       const upperWidth = token.upper ? this.estimateTokensWidth(font, token.upper, limitFontSize) : 0;
@@ -3248,7 +3271,14 @@ export class PageEngine {
       ) return 16 * scale;
       if (token.symbol === '\\dots' || token.symbol === '\\cdots' || token.symbol === '\\ldots' || token.symbol === '...') return 20 * scale;
       if (token.symbol === '∞') return 22 * scale;
-      if (token.symbol === 'Δ' || token.symbol === '∇' || token.symbol === 'ℒ' || token.symbol === '∀' || token.symbol === '∃' || token.symbol === '∪' || token.symbol === '∩') return 18 * scale;
+      if (
+        token.symbol === 'Δ' || token.symbol === '∇' || token.symbol === 'ℒ' || token.symbol === '∀' ||
+        token.symbol === '∃' || token.symbol === '∪' || token.symbol === '∩' || token.symbol === '↦' ||
+        token.symbol === '↑' || token.symbol === '↓' || token.symbol === '∅' || token.symbol === '∧' ||
+        token.symbol === '∨' || token.symbol === '⊆' || token.symbol === '⊇' || token.symbol === '⊂' ||
+        token.symbol === '⊃' || token.symbol === '≡' || token.symbol === '⊥' || token.symbol === '∥' ||
+        token.symbol === '∝' || token.symbol === '∘' || token.symbol === '¬'
+      ) return 18 * scale;
       return 18 * scale;
     }
     if (token.type === 'big-op') {
@@ -3287,6 +3317,15 @@ export class PageEngine {
         : typeof token.base === 'string'
         ? this.measureWord(font, token.base, fontSize, letterSpacing, token.base.length === 1 && /^[a-zA-Z]$/.test(token.base))
         : 16;
+      const isUnderBase =
+        typeof token.base === 'string' &&
+        (token.base === 'lim' ||
+          token.base === 'sup' ||
+          token.base === 'inf' ||
+          token.base === 'max' ||
+          token.base === 'min' ||
+          token.base === 'limsup' ||
+          token.base === 'liminf');
       const isAccentSup =
         token.sup &&
         token.sup.length === 1 &&
@@ -3294,6 +3333,9 @@ export class PageEngine {
         (token.sup[0].symbol === '^' || token.sup[0].symbol === '\\vec');
       const sw = token.sup && !isAccentSup ? this.estimateTokensWidth(font, token.sup, fontSize * 0.70) : 0;
       const subw = token.sub ? this.estimateTokensWidth(font, token.sub, fontSize * 0.70) : 0;
+      if (isUnderBase) {
+        return Math.max(bw, subw) + (sw > 0 ? sw + 4 : 4);
+      }
       return bw + Math.max(sw, subw) + (isAccentSup && !token.sub ? 0 : 4);
     }
     if (token.type === 'root') {

@@ -36,7 +36,7 @@ export interface MathBoxed {
 
 export interface MathBigOp {
   type: 'big-op';
-  symbol: '\\int' | '\\sum' | '\\prod';
+  symbol: '\\int' | '\\sum' | '\\prod' | '\\bigcup' | '\\bigcap';
   lower?: MathToken[];
   upper?: MathToken[];
 }
@@ -749,16 +749,41 @@ export function parseRawAIOutput(rawText: string): DocumentBlock[] {
       continue;
     }
 
-    // Alpha sub-items: e.g. (a), (b), a., a)
-    const alphaListMatch = line.match(/^(?:\(([a-zA-Z])\)|([a-zA-Z])[.)])\s*(.*)$/);
+    // Alpha sub-items: e.g. (a), (b), a., a), **(a)**, **a.**, **(a) Showing ...**, **(i)**, **(b) Showing that...**
+    const alphaListMatch = line.match(
+      /^(?:\*\*\s*)?(?:\(([a-zA-Z]|[ivxlcdmIVXLCDM]+)\)|([a-zA-Z]|[ivxlcdmIVXLCDM]+)[.)])(?:\s*\*\*)?\s*(.*)$/
+    );
     if (alphaListMatch) {
       const alphaChar = alphaListMatch[1] || alphaListMatch[2];
+      let remainder = (alphaListMatch[3] || '').trim();
+      remainder = remainder.replace(/^\*\*\s*/, '').replace(/[:.]?\s*\*\*[:.]?$/, ':').trim();
+      if (remainder.endsWith('**')) {
+        remainder = remainder.slice(0, -2).trim();
+      }
       blocks.push({
         id: `blk-${++blockIdCounter}`,
         type: 'margin-item',
         prefix: `(${alphaChar})`,
         indent: 1,
-        tokens: tokenizeParagraphWithInlineMath(alphaListMatch[3]),
+        tokens: tokenizeParagraphWithInlineMath(remainder),
+        rawText: line,
+      });
+      continue;
+    }
+
+    // Bold section / case / proof headers: e.g. **Case 1 (t = 0):**, **Step 1:**, **Claim:**, **Proof:**
+    const caseHeaderMatch = line.match(
+      /^\*\*(Case\s+[^:*]+|Step\s+[^:*]+|Part\s+[^:*]+|Claim|Proof|Base Case|Inductive Step)[:.]?\*\*\s*(.*)$/i
+    );
+    if (caseHeaderMatch) {
+      const headerTitle = caseHeaderMatch[1].trim() + ':';
+      const remainder = caseHeaderMatch[2].trim();
+      const fullText = remainder ? `${headerTitle} ${remainder}` : headerTitle;
+      blocks.push({
+        id: `blk-${++blockIdCounter}`,
+        type: 'paragraph',
+        indent: 0,
+        tokens: tokenizeParagraphWithInlineMath(fullText),
         rawText: line,
       });
       continue;
@@ -936,25 +961,40 @@ function processMathBlock(mathContent: string, blocks: DocumentBlock[], baseId: 
  */
 export function tokenizeParagraphWithInlineMath(text: string): MathToken[] {
   const tokens: MathToken[] = [];
-  // Split on $$...$$ or $...$ first while respecting escaped \$ so markdown stripping never alters math content
-  const parts = text.split(/(?<!\\)(\$\$[\s\S]+?\$\$|\$(?:\\.|[^\$\\])+\$)/g);
+  if (!text) return tokens;
 
-  for (const part of parts) {
-    if (!part) continue;
+  // 1. Mask math blocks ($$...$$ and $...$) so markdown regexes never touch LaTeX inside math
+  const mathPlaceholders: string[] = [];
+  const placeholderPrefix = '___MATH_TOKEN_';
+  const maskedText = text.replace(/(?<!\\)(\$\$[\s\S]+?\$\$|\$(?:\\.|[^\$\\])+\$)/g, (match) => {
+    const idx = mathPlaceholders.length;
+    mathPlaceholders.push(match);
+    return `${placeholderPrefix}${idx}___`;
+  });
 
-    if (part.startsWith('$$') && part.endsWith('$$') && part.length >= 4) {
-      const mathInner = part.slice(2, -2).trim();
-      tokens.push(...parseLatexExpressionTokens(mathInner));
-    } else if (part.startsWith('$') && part.endsWith('$') && part.length >= 2) {
-      const mathInner = part.slice(1, -1);
-      tokens.push(...parseLatexExpressionTokens(mathInner));
+  // 2. Clean markdown bold (**text**) and italics (*text*) across prose and unescape \$
+  let cleanedProse = maskedText
+    .replace(/\\(\$)/g, '$1')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*([^\s*][^*]*?)\*/g, '$1')
+    .replace(/\*\*/g, ''); // Strip any stray orphan asterisks left over
+
+  // 3. Split by placeholder pattern
+  const placeholderRegex = new RegExp(`(${placeholderPrefix}\\d+___)`, 'g');
+  const segments = cleanedProse.split(placeholderRegex);
+
+  for (const seg of segments) {
+    if (!seg) continue;
+    const match = seg.match(new RegExp(`^${placeholderPrefix}(\\d+)___$`));
+    if (match) {
+      const mathRaw = mathPlaceholders[parseInt(match[1], 10)];
+      if (mathRaw.startsWith('$$') && mathRaw.endsWith('$$') && mathRaw.length >= 4) {
+        tokens.push(...parseLatexExpressionTokens(mathRaw.slice(2, -2).trim()));
+      } else if (mathRaw.startsWith('$') && mathRaw.endsWith('$') && mathRaw.length >= 2) {
+        tokens.push(...parseLatexExpressionTokens(mathRaw.slice(1, -1)));
+      }
     } else {
-      // Strip markdown bold (**text**) and italics (*text*) only in prose segments and unescape \$
-      const cleanedProse = part
-        .replace(/\\(\$)/g, '$1')
-        .replace(/\*\*(.*?)\*\*/g, '$1')
-        .replace(/\*([^\s*][^*]*?)\*/g, '$1');
-      const subParts = cleanedProse.split(/(\s+)/);
+      const subParts = seg.split(/(\s+)/);
       for (const sp of subParts) {
         if (!sp) continue;
         if (/^\s+$/.test(sp)) {
@@ -1000,17 +1040,35 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
     '\\cot',
     '\\sec',
     '\\csc',
+    '\\limsup',
+    '\\liminf',
+    '\\lim',
+    '\\argmax',
+    '\\argmin',
+    '\\max',
+    '\\min',
+    '\\sup',
+    '\\inf',
     '\\ln',
     '\\log',
     '\\exp',
-    '\\lim',
     '\\det',
-    '\\max',
-    '\\min',
     '\\gcd',
+    '\\lcm',
     '\\deg',
     '\\dim',
     '\\ker',
+    '\\hom',
+    '\\arg',
+    '\\Pr',
+    '\\rank',
+    '\\diag',
+    '\\trace',
+    '\\tr',
+    '\\cov',
+    '\\var',
+    '\\bias',
+    '\\corr',
   ];
 
   // Greek letter map
@@ -1376,11 +1434,36 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
         if (nextIdx < expr.length && (expr[nextIdx] === '^' || expr[nextIdx] === '_') && innerTokens.length > 1) {
           tokens.push({ type: 'script', base: innerTokens });
         } else {
-          tokens.push(...innerTokens);
+          // Detect set literals e.g. {1, ..., n}, {\omega : \tau \le t}, or sets following \in, =
+          const lastTok = tokens[tokens.length - 1];
+          const isAfterSetRel =
+            lastTok &&
+            lastTok.type === 'operator' &&
+            ['∈', '∉', '=', '⊆', '⊇', '⊂', '⊃', '∪', '∩'].includes(lastTok.symbol);
+          const hasSetPunct =
+            b.inner.includes(',') ||
+            b.inner.includes(':') ||
+            b.inner.includes(';') ||
+            b.inner.includes('|') ||
+            b.inner.includes('\\mid');
+
+          if (isAfterSetRel || hasSetPunct) {
+            tokens.push({ type: 'delimiter', char: '{' });
+            tokens.push(...innerTokens);
+            tokens.push({ type: 'delimiter', char: '}' });
+          } else {
+            tokens.push(...innerTokens);
+          }
         }
         i = b.endIndex;
         continue;
       }
+    }
+
+    if (expr[i] === '}') {
+      tokens.push({ type: 'delimiter', char: '}' });
+      i++;
+      continue;
     }
 
     // Single character delimiters
@@ -1565,17 +1648,23 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
     }
     if (matchedGreek) continue;
 
-    // 12. Big Mathematical Operators with Limits (\int, \sum, \prod)
+    // 12. Big Mathematical Operators with Limits (\int, \sum, \prod, \bigcup, \bigcap)
     if (
       matchesLatexMacro(expr, i, '\\int') ||
       matchesLatexMacro(expr, i, '\\sum') ||
-      matchesLatexMacro(expr, i, '\\prod')
+      matchesLatexMacro(expr, i, '\\prod') ||
+      matchesLatexMacro(expr, i, '\\bigcup') ||
+      matchesLatexMacro(expr, i, '\\bigcap')
     ) {
       const sym = matchesLatexMacro(expr, i, '\\int')
         ? '\\int'
         : matchesLatexMacro(expr, i, '\\sum')
         ? '\\sum'
-        : '\\prod';
+        : matchesLatexMacro(expr, i, '\\prod')
+        ? '\\prod'
+        : matchesLatexMacro(expr, i, '\\bigcup')
+        ? '\\bigcup'
+        : '\\bigcap';
       i += sym.length;
 
       let lower: MathToken[] | undefined;
@@ -1622,7 +1711,7 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
       if (lower || upper) {
         tokens.push({
           type: 'big-op',
-          symbol: sym as '\\int' | '\\sum' | '\\prod',
+          symbol: sym as '\\int' | '\\sum' | '\\prod' | '\\bigcup' | '\\bigcap',
           lower,
           upper,
         });
@@ -1687,6 +1776,81 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
     if (matchesLatexMacro(expr, i, '\\setminus')) {
       tokens.push({ type: 'operator', symbol: '\\' });
       i += 9;
+      continue;
+    }
+    if (matchesLatexMacro(expr, i, '\\mid')) {
+      tokens.push({ type: 'delimiter', char: '|' });
+      i += 4;
+      continue;
+    }
+    if (matchesLatexMacro(expr, i, '\\mapsto')) {
+      tokens.push({ type: 'operator', symbol: '↦' });
+      i += 7;
+      continue;
+    }
+    if (matchesLatexMacro(expr, i, '\\uparrow')) {
+      tokens.push({ type: 'operator', symbol: '↑' });
+      i += 8;
+      continue;
+    }
+    if (matchesLatexMacro(expr, i, '\\downarrow')) {
+      tokens.push({ type: 'operator', symbol: '↓' });
+      i += 10;
+      continue;
+    }
+    if (matchesLatexMacro(expr, i, '\\emptyset')) {
+      tokens.push({ type: 'operator', symbol: '∅' });
+      i += 8;
+      continue;
+    }
+    if (matchesLatexMacro(expr, i, '\\varnothing')) {
+      tokens.push({ type: 'operator', symbol: '∅' });
+      i += 10;
+      continue;
+    }
+    if (matchesLatexMacro(expr, i, '\\wedge') || matchesLatexMacro(expr, i, '\\land')) {
+      tokens.push({ type: 'operator', symbol: '∧' });
+      i += matchesLatexMacro(expr, i, '\\wedge') ? 6 : 5;
+      continue;
+    }
+    if (matchesLatexMacro(expr, i, '\\vee') || matchesLatexMacro(expr, i, '\\lor')) {
+      tokens.push({ type: 'operator', symbol: '∨' });
+      i += 4;
+      continue;
+    }
+    if (matchesLatexMacro(expr, i, '\\equiv')) {
+      tokens.push({ type: 'operator', symbol: '≡' });
+      i += 6;
+      continue;
+    }
+    if (matchesLatexMacro(expr, i, '\\perp')) {
+      tokens.push({ type: 'operator', symbol: '⊥' });
+      i += 5;
+      continue;
+    }
+    if (matchesLatexMacro(expr, i, '\\parallel')) {
+      tokens.push({ type: 'operator', symbol: '∥' });
+      i += 9;
+      continue;
+    }
+    if (matchesLatexMacro(expr, i, '\\propto')) {
+      tokens.push({ type: 'operator', symbol: '∝' });
+      i += 7;
+      continue;
+    }
+    if (matchesLatexMacro(expr, i, '\\circ')) {
+      tokens.push({ type: 'operator', symbol: '∘' });
+      i += 5;
+      continue;
+    }
+    if (matchesLatexMacro(expr, i, '\\neg')) {
+      tokens.push({ type: 'operator', symbol: '¬' });
+      i += 4;
+      continue;
+    }
+    if (matchesLatexMacro(expr, i, '\\supset')) {
+      tokens.push({ type: 'operator', symbol: '⊃' });
+      i += 7;
       continue;
     }
     if (matchesLatexMacro(expr, i, '\\subset')) {
@@ -1874,7 +2038,11 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
     }
 
     const chunk = expr.slice(i, nextI);
-    tokens.push({ type: 'text', text: chunk });
+    // Never output a raw literal backslash into canvas text!
+    const cleanChunk = chunk.startsWith('\\') ? chunk.replace(/^\\+/, '') : chunk;
+    if (cleanChunk.length > 0) {
+      tokens.push({ type: 'text', text: cleanChunk });
+    }
     i = nextI;
   }
 

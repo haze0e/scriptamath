@@ -333,6 +333,15 @@ export class CursiveEngine {
         prevExitAbs = null;
       }
 
+      // Multi-stroke glyphs: if primaryStrokes has more than 1 stroke, execute subsequent strokes immediately
+      if (def.primaryStrokes && def.primaryStrokes.length > 1) {
+        for (let sIdx = 1; sIdx < def.primaryStrokes.length; sIdx++) {
+          const extraStroke = def.primaryStrokes[sIdx];
+          const mappedExtra = extraStroke.map((pt, idx) => toAbs(pt, idx));
+          immediateStrokes.push(mappedExtra);
+        }
+      }
+
       // Queue delayed crossbars & tittles (or execute immediately if disabled)
       if (def.delayedStrokes) {
         const mappedDelayed = def.delayedStrokes.map((s) => s.map((pt, idx) => toAbs(pt, idx)));

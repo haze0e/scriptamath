@@ -66,7 +66,7 @@ export const App: React.FC = () => {
         cursiveMathX: true,
         delayedCrossAndDot: true,
         snapToRuledLines: false,
-        caretInsertionRate: 0.02,
+        caretInsertionRate: 0.001,
         coldStartStarvation: true,
       },
       pen: {
@@ -88,14 +88,14 @@ export const App: React.FC = () => {
         perspectiveTilt: 0.16, // Subtle camera perspective skew & page curl
         showPaperTexture: true, // Physical paper pulp fibers & micro-creases
         showMarginGuides: false, // No ruled lines, clean blank sheet
-        roughWorkColumn: initialStructured.roughWork.length > 0, // Enable rough sidebar if rough work present
+        roughWorkColumn: false, // Clean margins by default unless explicitly toggled on
         spiralHoles: true, // Authentic spiral notebook punch holes & coils
         studentName: 'Chitesh (25323015)',
         assignmentTitle: initialStructured.title || initialSample.title,
         dateStr: initialStructured.dateStr || '03/11/2026',
         showCoffeeStain: false,
-        marginAnnotation: initialStructured.marginNote || 'Problem 3 (b) — Due Nov 14',
-        customRoughWork: initialStructured.roughWork.length > 0 ? initialStructured.roughWork : ['14 · 6 = 84', '84 - 23 = 61', '√61 ≈ 7.81'],
+        marginAnnotation: initialStructured.marginNote || '',
+        customRoughWork: initialStructured.roughWork || [],
         showStickyNote: false,
         stickyNoteText: "Don't forget to submit before 5 PM!",
         highlighterMode: validHighlights.includes(rawHl as any) ? (rawHl as any) : 'none',

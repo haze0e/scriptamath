@@ -376,13 +376,11 @@ export const CURSIVE_UPPERCASE: Record<string, CursiveGlyphDef> = {
   K: {
     char: 'K', advance: 1.10, entryJoin: 'break', exitJoin: 'baseline',
     entryPoint: { x: 0.22, y: -1.80 }, exitPoint: { x: 1.05, y: -0.15 },
-    primaryStrokes: [
-      [{ x: 0.22, y: -1.80 }, { x: 0.22, y: 0.00 }],
-      [
-        { x: 0.88, y: -1.80 }, { x: 0.42, y: -0.95 },
-        { x: 0.52, y: -0.90 }, { x: 0.82, y: -0.05 }, { x: 1.05, y: -0.15 }
-      ]
-    ],
+    primaryStrokes: [[
+      { x: 0.22, y: -1.80 }, { x: 0.22, y: 0.00 }, { x: 0.24, y: -1.05 },
+      { x: 0.82, y: -1.80 }, { x: 0.42, y: -0.95 },
+      { x: 0.82, y: -0.05 }, { x: 1.05, y: -0.15 }
+    ]],
   },
   L: {
     char: 'L', advance: 0.95, entryJoin: 'break', exitJoin: 'baseline',
@@ -490,10 +488,10 @@ export const CURSIVE_UPPERCASE: Record<string, CursiveGlyphDef> = {
   X: {
     char: 'X', advance: 1.08, entryJoin: 'break', exitJoin: 'baseline',
     entryPoint: { x: 0.20, y: -1.75 }, exitPoint: { x: 1.05, y: -0.15 },
-    primaryStrokes: [
-      [{ x: 0.20, y: -1.75 }, { x: 0.45, y: -0.90 }, { x: 0.85, y: 0.00 }, { x: 1.05, y: -0.15 }],
-      [{ x: 0.82, y: -1.75 }, { x: 0.22, y: 0.00 }]
-    ],
+    primaryStrokes: [[
+      { x: 0.20, y: -1.75 }, { x: 0.45, y: -0.90 }, { x: 0.85, y: 0.00 }, { x: 1.05, y: -0.15 }
+    ]],
+    delayedStrokes: [[{ x: 0.82, y: -1.75 }, { x: 0.22, y: 0.00 }]],
   },
   Y: {
     char: 'Y', advance: 1.12, entryJoin: 'break', exitJoin: 'baseline',
