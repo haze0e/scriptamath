@@ -2,11 +2,11 @@ import opentype from 'opentype.js';
 import rough from 'roughjs';
 import jsPDF from 'jspdf';
 import JSZip from 'jszip';
-import { AppState, AllographLibrary } from '../types';
+import { AppState, AllographLibrary, CursiveMode } from '../types';
 import { SeededNoise } from './noise';
 import { GlyphMutator, GlyphDrawOptions } from './glyphMutator';
 import { MathRenderer, measureFontStemWidth } from './mathRenderer';
-import { InkAndScanPipeline } from './inkAndScan';
+import { InkAndScanPipeline, getPaperRuleOriginY } from './inkAndScan';
 import { CursiveEngine } from './cursiveEngine';
 import {
   parseRawAIOutput,
@@ -112,6 +112,23 @@ export class PageEngine {
     return { dy, slantDeg };
   }
 
+  private getPageSlantOffset(x: number, y: number, lineProgress: number, fatigue: number): number {
+    const macroDrift = this.noise.get2D(x * 0.0022, y * 0.0018) * 2.0; // ±2° coherent paragraph wave
+    const fatigueLean = fatigue * lineProgress * 2.2;
+    return macroDrift + fatigueLean;
+  }
+
+  private getConsistentSpaceAdvance(
+    fontSize: number,
+    widthMultiplier: number,
+    wordSpacingMult: number,
+    y: number
+  ): number {
+    const lineRhythm = 1.0 + this.noise.noise1D(y * 0.0038) * 0.06;
+    const microVariance = 0.92 + this.noise.random() * 0.16;
+    return fontSize * 0.48 * widthMultiplier * wordSpacingMult * lineRhythm * microVariance;
+  }
+
   /**
    * Generates authentic student typo slips (swapping adjacent internal letters or dropped terminal characters)
    * Guaranteed to produce a typo distinct from the original word.
@@ -160,7 +177,10 @@ export class PageEngine {
     wordSpacing = 1.0,
     font?: opentype.Font,
     paperTemplate?: string,
-    snapToRuledLines?: boolean
+    snapToRuledLines?: boolean,
+    cursiveMode?: CursiveMode,
+    allographs?: AllographLibrary,
+    cursiveStyle?: string
   ): PageLayoutData[] {
     const pages: PageLayoutData[] = [];
     const maxPageY = PAGE_HEIGHT - BOTTOM_MARGIN;
@@ -172,24 +192,30 @@ export class PageEngine {
       (snapToRuledLines ?? (this.currentHandwriting?.snapToRuledLines ?? true)) &&
       (effectiveTemplate === 'indian-ruled' || effectiveTemplate === 'exam-booklet');
 
+    const ruleOriginY = getPaperRuleOriginY((effectiveTemplate || 'indian-ruled') as any, TOP_MARGIN);
     const snapToNextRuledLine = (y: number, minGap = 0): number => {
       if (!shouldSnapToRule) return y;
-      const offsetFromTop = Math.max(0, y - TOP_MARGIN);
+      const offsetFromTop = Math.max(0, y - ruleOriginY);
       const lineIdx = Math.ceil((offsetFromTop - 4) / BASE_LINE_HEIGHT);
-      return TOP_MARGIN + lineIdx * BASE_LINE_HEIGHT + minGap;
+      return ruleOriginY + lineIdx * BASE_LINE_HEIGHT + minGap;
     };
 
     const estimateWidth = (toks: MathToken[], size: number): number => {
       if (font) {
         const prevHw = this.currentHandwriting;
+        const prevAllo = this.currentAllographs;
+        if (allographs) this.currentAllographs = allographs;
         this.currentHandwriting = {
           ...this.currentHandwriting,
           letterSpacing,
           wordSpacing,
           fontSize: size,
+          cursiveMode: cursiveMode ?? this.currentHandwriting?.cursiveMode ?? 'print',
+          cursiveStyle: cursiveStyle ?? this.currentHandwriting?.cursiveStyle,
         } as any;
         const w = this.estimateTokensWidth(font, toks, size);
         this.currentHandwriting = prevHw;
+        this.currentAllographs = prevAllo;
         return w;
       }
       let charCount = 0;
@@ -205,7 +231,7 @@ export class PageEngine {
     };
 
     let currentPageBlocks: DocumentBlock[] = [];
-    let currentY = TOP_MARGIN;
+    let currentY = shouldSnapToRule ? ruleOriginY : TOP_MARGIN;
     let activeQuestionNum: number | undefined;
 
     for (let bIdx = 0; bIdx < blocks.length; bIdx++) {
@@ -336,8 +362,8 @@ export class PageEngine {
         });
         currentPageBlocks = [block];
         currentY = shouldSnapToRule
-          ? snapToNextRuledLine(TOP_MARGIN + blockHeight)
-          : TOP_MARGIN + blockHeight;
+          ? snapToNextRuledLine(ruleOriginY + blockHeight)
+          : ruleOriginY + blockHeight;
       } else {
         currentPageBlocks.push(block);
         currentY = shouldSnapToRule
@@ -432,7 +458,18 @@ export class PageEngine {
     const textRoughCanvas = rough.canvas(textCanvas);
 
     // 3. Render student content line by line onto textCanvas
-    let currentY = TOP_MARGIN;
+    const shouldSnapToRule =
+      (handwriting.snapToRuledLines ?? true) &&
+      (paper.template === 'indian-ruled' || paper.template === 'exam-booklet');
+    const ruleOriginY = getPaperRuleOriginY(paper.template, TOP_MARGIN);
+    const snapToNextRuledLine = (y: number, minGap = 0): number => {
+      if (!shouldSnapToRule) return y;
+      const offsetFromTop = Math.max(0, y - ruleOriginY);
+      const lineIdx = Math.ceil((offsetFromTop - 4) / BASE_LINE_HEIGHT);
+      return ruleOriginY + lineIdx * BASE_LINE_HEIGHT + minGap;
+    };
+
+    let currentY = shouldSnapToRule ? ruleOriginY : TOP_MARGIN;
     const bodyInkColor = pen.bodyColorHex;
     const headingInkColor = pen.headingColorHex;
 
@@ -704,17 +741,6 @@ export class PageEngine {
       });
     }
 
-    const shouldSnapToRule =
-      (handwriting.snapToRuledLines ?? true) &&
-      (paper.template === 'indian-ruled' || paper.template === 'exam-booklet');
-
-    const snapToNextRuledLine = (y: number, minGap = 0): number => {
-      if (!shouldSnapToRule) return y;
-      const offsetFromTop = Math.max(0, y - TOP_MARGIN);
-      const lineIdx = Math.ceil((offsetFromTop - 4) / BASE_LINE_HEIGHT);
-      return TOP_MARGIN + lineIdx * BASE_LINE_HEIGHT + minGap;
-    };
-
     let consecutiveMathSteps = 0;
     let derivationDriftX = 0;
 
@@ -761,14 +787,12 @@ export class PageEngine {
         derivationDriftX = 0;
       }
 
-      // Left margin wander: on unruled paper, amplitude is 28px + per-line step jitter (breaks the vertical wall)
+      // Left margin wander envelope (Part 2 §4)
       const isUnruled = paper.template === 'unruled-bond';
-      const wanderAmp = isUnruled ? 28 : 9;
-      const stepJitter = (this.noise.random() - 0.5) * (isUnruled ? 14 : 5) * handwriting.marginWander;
-      const wander =
-        this.noise.noise1D(currentY * 0.03 + bIdx * 0.7) * handwriting.marginWander * wanderAmp +
-        lineProgress * 12 * handwriting.marginWander +
-        stepJitter;
+      const wanderAmp = isUnruled ? 14 : 6;
+      const smoothParagraphWander = this.noise.noise1D(currentY * 0.0045) * handwriting.marginWander * wanderAmp;
+      const stepMicroJitter = (this.noise.random() - 0.5) * (isUnruled ? 5.0 : 2.5) * handwriting.marginWander;
+      const wander = smoothParagraphWander + lineProgress * 9 * handwriting.marginWander + stepMicroJitter;
 
       // When transitioning from prose to an equation, add organic student equation indent (14-32px)
       const prevBlock = bIdx > 0 ? pageData.blocks[bIdx - 1] : null;
@@ -793,7 +817,9 @@ export class PageEngine {
       if (block.type === 'heading') {
         // Headings in Red/Black gel pen with single or double hand-sketched underline
         const headingFontSize = (block.level === 1 ? handwriting.fontSize * 1.3 : handwriting.fontSize * 1.15) * phaseScale;
-        currentY += BASE_LINE_HEIGHT * 0.25;
+        if (!shouldSnapToRule) {
+          currentY += BASE_LINE_HEIGHT * 0.25;
+        }
 
         // Render heading tokens (supports inline math without raw $ signs)
         const seqResult = this.renderTokenSequence(
@@ -805,7 +831,7 @@ export class PageEngine {
           headingFontSize,
           headingInkColor,
           lineProgress,
-          handwriting,
+          blockHandwriting,
           textRoughCanvas
         );
         const renderedWidth = seqResult.width;
@@ -947,7 +973,7 @@ export class PageEngine {
                 effectiveFontSize,
                 prefixColor,
                 lineProgress,
-                handwriting,
+                blockHandwriting,
                 textRoughCanvas
               );
               // Body tokens start cleanly at baseMarginX
@@ -964,7 +990,7 @@ export class PageEngine {
                 effectiveFontSize,
                 prefixColor,
                 lineProgress,
-                handwriting,
+                blockHandwriting,
                 textRoughCanvas
               );
               startX = prefX + prefWidth + 12;
@@ -982,7 +1008,7 @@ export class PageEngine {
           effectiveFontSize,
           bodyInkColor,
           lineProgress,
-          handwriting,
+          blockHandwriting,
           textRoughCanvas
         );
 
@@ -1014,7 +1040,7 @@ export class PageEngine {
             effectiveFontSize,
             bodyInkColor,
             lineProgress,
-            handwriting,
+            blockHandwriting,
             textRoughCanvas
           );
           this.mathRenderer.drawMistakeScratch(
@@ -1037,7 +1063,7 @@ export class PageEngine {
           effectiveFontSize,
           bodyInkColor,
           lineProgress,
-          handwriting,
+          blockHandwriting,
           textRoughCanvas
         );
 
@@ -1045,8 +1071,11 @@ export class PageEngine {
         const hasMatrix = block.tokens.some((t) => t.type === 'matrix' || (t.type === 'boxed' && t.content.some((it) => it.type === 'matrix')));
         const hasBoxed = block.tokens.some((t) => t.type === 'boxed');
         const minStepHeight = blockSpan.ascent + blockSpan.descent + (hasBoxed ? 16 : 8);
-        const stepSpacingMult = hasMatrix ? (1.18 + this.noise.random() * 0.08) : hasBoxed ? (1.12 + this.noise.random() * 0.08) : (0.94 + this.noise.random() * 0.16);
-        currentY += Math.max(seqResult.height, minStepHeight) * stepSpacingMult;
+        const rawStepH = Math.max(seqResult.height, minStepHeight);
+        const stepSpacingMult = shouldSnapToRule && rawStepH <= BASE_LINE_HEIGHT
+          ? 1.0
+          : hasMatrix ? (1.18 + this.noise.random() * 0.08) : hasBoxed ? (1.12 + this.noise.random() * 0.08) : (0.94 + this.noise.random() * 0.16);
+        currentY += shouldSnapToRule && rawStepH <= BASE_LINE_HEIGHT ? BASE_LINE_HEIGHT : rawStepH * stepSpacingMult;
       } else if (block.type === 'boxed-final') {
         // Boxed final answer block
         const advanceY = this.renderBoxedAnswerBlock(
@@ -1058,7 +1087,7 @@ export class PageEngine {
           effectiveFontSize,
           bodyInkColor,
           lineProgress,
-          handwriting,
+          blockHandwriting,
           textRoughCanvas
         );
         currentY += advanceY;
@@ -1074,7 +1103,7 @@ export class PageEngine {
           bodyInkColor,
           headingInkColor,
           lineProgress,
-          handwriting,
+          blockHandwriting,
           textRoughCanvas
         );
         currentY += advanceY;
@@ -1110,7 +1139,7 @@ export class PageEngine {
           effectiveFontSize,
           bodyInkColor,
           lineProgress,
-          handwriting,
+          blockHandwriting,
           textRoughCanvas
         );
         currentY += advanceY;
@@ -1143,7 +1172,7 @@ export class PageEngine {
     }
 
     // 4.5 Subtle Cellulose Ink Feathering
-    if (paper.showPaperTexture) {
+    if (paper.showPaperTexture && maxBlocks === undefined) {
       this.inkAndScan.applyCelluloseInkFeathering(textCanvas);
     }
 
@@ -1399,31 +1428,35 @@ export class PageEngine {
             currX += typoW + 8;
           }
 
-          // Caret ^ Supralinear insertion
+          // Caret ^ Supralinear insertion (BUG-06)
           const caretRate = handwriting.caretInsertionRate ?? 0;
+          const insertedScale = 0.68;
+          const estInsertedW = wWidth * insertedScale;
           if (
             caretRate > 0 &&
             w.length >= 2 &&
             w.length <= 5 &&
             !isUnderObstacle &&
             this.prevLineObstacles.length === 0 &&
+            currX + estInsertedW + 18 <= this.currentRightMargin &&
             this.noise.random() < caretRate
           ) {
             const caretW = this.mathRenderer.drawCaretMark(ctx, currX, wordY, fontSize, inkColor);
-            this.renderWordOrChars(
+            const insX = currX + Math.max(0, (caretW - estInsertedW) * 0.35);
+            const actualInsW = this.renderWordOrChars(
               ctx,
               font,
               w,
-              currX + 2,
-              wordY - fontSize * 0.62,
-              fontSize * 0.70,
+              insX,
+              wordY - fontSize * 0.68,
+              fontSize * insertedScale,
               inkColor,
               lineProgress,
               handwriting,
               roughCanvas,
               wristState
             );
-            currX += Math.max(caretW, 14);
+            currX += Math.max(caretW + 4, actualInsW * 0.85 + 6);
             continue;
           }
 
@@ -1702,8 +1735,7 @@ export class PageEngine {
   ): number {
     if (token.type === 'space') {
       const wordSpacingMult = handwriting.wordSpacing ?? 1.0;
-      const humanKerning = 0.55 + this.noise.random() * 0.90;
-      return fontSize * 0.48 * token.widthMultiplier * wordSpacingMult * humanKerning;
+      return this.getConsistentSpaceAdvance(fontSize, token.widthMultiplier, wordSpacingMult, y);
     }
 
     if (token.type === 'text') {
@@ -2635,11 +2667,29 @@ export class PageEngine {
     isMathContext = false,
     isColdStart = false
   ): number {
+    const pageSlant = this.getPageSlantOffset(startX, y, lineProgress, handwriting.handFatigue ?? 0.2);
+    const effectiveExtraSlant = (extraSlant ?? 0) + pageSlant;
+
     if (handwriting.cursiveMode === 'vector-cursive' && !isMathContext) {
-      const segments = text.match(/[a-z]+|[^a-z]+/g) || [text];
+      const effectiveSlantHw = {
+        ...handwriting,
+        slantAngle: (handwriting.slantAngle ?? 12) + pageSlant,
+      };
+      const segments = text.match(/[A-Za-z]+|[^A-Za-z]+/g) || [text];
       let segX = startX;
+      const defaultPen = this.currentPen || {
+        bodyColorPreset: 'blue',
+        headingColorPreset: 'red',
+        bodyColorHex: inkColor,
+        headingColorHex: inkColor,
+        penStyle: 'ballpoint',
+        strokeWidth: 1.6,
+        inkPooling: true,
+        drySkips: false,
+        headingUnderline: 'single',
+      };
       for (const seg of segments) {
-        if (/^[a-z]+$/.test(seg) && this.cursiveEngine.canRenderWordSegment(seg, this.currentAllographs)) {
+        if (/^[A-Za-z]+$/.test(seg) && this.cursiveEngine.canRenderWordSegment(seg, this.currentAllographs, handwriting.cursiveStyle)) {
           const runW = this.cursiveEngine.renderCursiveRun(
             ctx,
             seg,
@@ -2647,24 +2697,71 @@ export class PageEngine {
             y,
             fontSize,
             inkColor,
-            handwriting,
-            this.currentPen || {
-              bodyColorPreset: 'blue',
-              headingColorPreset: 'red',
-              bodyColorHex: inkColor,
-              headingColorHex: inkColor,
-              penStyle: 'ballpoint',
-              strokeWidth: 1.6,
-              inkPooling: true,
-              drySkips: false,
-              headingUnderline: 'single',
-            },
+            effectiveSlantHw,
+            defaultPen,
             this.mutator,
             this.mathRenderer,
             this.currentAllographs,
             isColdStart && segX === startX
           );
           segX += runW;
+        } else if (/^[A-Za-z]+$/.test(seg)) {
+          let subRun = '';
+          for (const ch of seg) {
+            if (this.cursiveEngine.canRenderWordSegment(ch, this.currentAllographs, handwriting.cursiveStyle)) {
+              subRun += ch;
+            } else {
+              if (subRun.length > 0) {
+                segX += this.cursiveEngine.renderCursiveRun(
+                  ctx,
+                  subRun,
+                  segX,
+                  y,
+                  fontSize,
+                  inkColor,
+                  effectiveSlantHw,
+                  defaultPen,
+                  this.mutator,
+                  this.mathRenderer,
+                  this.currentAllographs,
+                  isColdStart && segX === startX
+                );
+                subRun = '';
+              }
+              segX += this.renderWordOrChars(
+                ctx,
+                font,
+                ch,
+                segX,
+                y,
+                fontSize,
+                inkColor,
+                lineProgress,
+                { ...handwriting, cursiveMode: 'print' },
+                roughCanvas,
+                wristState,
+                effectiveExtraSlant,
+                false,
+                isColdStart && segX === startX
+              );
+            }
+          }
+          if (subRun.length > 0) {
+            segX += this.cursiveEngine.renderCursiveRun(
+              ctx,
+              subRun,
+              segX,
+              y,
+              fontSize,
+              inkColor,
+              effectiveSlantHw,
+              defaultPen,
+              this.mutator,
+              this.mathRenderer,
+              this.currentAllographs,
+              isColdStart && segX === startX
+            );
+          }
         } else {
           segX += this.renderWordOrChars(
             ctx,
@@ -2678,7 +2775,7 @@ export class PageEngine {
             { ...handwriting, cursiveMode: 'print' },
             roughCanvas,
             wristState,
-            extraSlant,
+            effectiveExtraSlant,
             false,
             isColdStart && segX === startX
           );
@@ -2886,7 +2983,7 @@ export class PageEngine {
       const rawGlyph = font.charToGlyph(char);
       if (rawGlyph.index === 0) {
         ctx.save();
-        const slantRad = (((handwriting.slantAngle ?? 5) + (extraSlant ?? 0) + wristOffset.slantDeg) * Math.PI) / 180;
+        const slantRad = (((handwriting.slantAngle ?? 5) + effectiveExtraSlant + wristOffset.slantDeg) * Math.PI) / 180;
         ctx.translate(currX, charY);
         ctx.transform(1, 0, -Math.tan(slantRad), 1, 0, 0);
         ctx.font = `italic ${Math.round(fontSize * 0.92)}px "Caveat", "Kalam", cursive, serif`;
@@ -2913,7 +3010,7 @@ export class PageEngine {
         isSharedCrossbar: Boolean(isFirstOfSharedCrossbar || isSecondOfSharedCrossbar),
         allographs: this.currentAllographs,
         inkColor,
-        extraSlant: (extraSlant || 0) + wristOffset.slantDeg,
+        extraSlant: effectiveExtraSlant + wristOffset.slantDeg,
       };
 
       const result = this.mutator.mutateGlyph(font, char, currX, charY, options);
@@ -3048,13 +3145,38 @@ export class PageEngine {
     return currX - startX;
   }
 
-  private measureWord(font: opentype.Font, word: string, fontSize: number, letterSpacing = 0): number {
-    if (this.currentHandwriting?.cursiveMode === 'vector-cursive') {
-      const segments = word.match(/[a-z]+|[^a-z]+/g) || [word];
+  private measureWord(
+    font: opentype.Font,
+    word: string,
+    fontSize: number,
+    letterSpacing = 0,
+    isMathContext = false
+  ): number {
+    if (this.currentHandwriting?.cursiveMode === 'vector-cursive' && !isMathContext) {
+      const segments = word.match(/[A-Za-z]+|[^A-Za-z]+/g) || [word];
       let totalW = 0;
       for (const seg of segments) {
-        if (/^[a-z]+$/.test(seg) && this.cursiveEngine.canRenderWordSegment(seg, this.currentAllographs)) {
+        if (/^[A-Za-z]+$/.test(seg) && this.cursiveEngine.canRenderWordSegment(seg, this.currentAllographs, this.currentHandwriting?.cursiveStyle)) {
           totalW += this.cursiveEngine.measureCursiveWord(seg, fontSize, this.currentHandwriting, this.currentAllographs);
+        } else if (/^[A-Za-z]+$/.test(seg)) {
+          let subRun = '';
+          for (const ch of seg) {
+            if (this.cursiveEngine.canRenderWordSegment(ch, this.currentAllographs, this.currentHandwriting?.cursiveStyle)) {
+              subRun += ch;
+            } else {
+              if (subRun.length > 0) {
+                totalW += this.cursiveEngine.measureCursiveWord(subRun, fontSize, this.currentHandwriting, this.currentAllographs);
+                subRun = '';
+              }
+              const glyph = font.charToGlyph(ch);
+              const unitsPerEm = font.unitsPerEm > 0 ? font.unitsPerEm : 1000;
+              const adv = glyph.advanceWidth ? (glyph.advanceWidth * fontSize) / unitsPerEm : fontSize * 0.55;
+              totalW += Math.max(2, adv + letterSpacing);
+            }
+          }
+          if (subRun.length > 0) {
+            totalW += this.cursiveEngine.measureCursiveWord(subRun, fontSize, this.currentHandwriting, this.currentAllographs);
+          }
         } else {
           for (const char of seg) {
             const glyph = font.charToGlyph(char);
@@ -3069,6 +3191,15 @@ export class PageEngine {
 
     let width = 0;
     for (const char of word) {
+      if (
+        isMathContext &&
+        (this.currentHandwriting?.cursiveMathX ?? true) &&
+        char === 'x' &&
+        !/^[a-zA-Z]{3,}$/.test(word)
+      ) {
+        width += 15.5 * (fontSize / 28) + letterSpacing;
+        continue;
+      }
       if (
         char === 'Δ' || char === '∇' || char === 'ℒ' || char === 'δ' || char === 'α' ||
         char === 'τ' || char === '∈' || char === '<' || char === '>' || char === '≤' ||
@@ -3092,7 +3223,7 @@ export class PageEngine {
     const letterSpacing = this.currentHandwriting?.letterSpacing ?? 0;
 
     if (token.type === 'space') return fontSize * 0.48 * token.widthMultiplier * wordSpacingMult;
-    if (token.type === 'text') return this.measureWord(font, token.text, fontSize, letterSpacing);
+    if (token.type === 'text') return this.measureWord(font, token.text, fontSize, letterSpacing, true);
     if (token.type === 'delimiter') return 10;
     if (token.type === 'operator') {
       const scale = fontSize / 28;
@@ -3150,7 +3281,7 @@ export class PageEngine {
       const bw = Array.isArray(token.base)
         ? this.estimateTokensWidth(font, token.base, fontSize)
         : typeof token.base === 'string'
-        ? this.measureWord(font, token.base, fontSize, letterSpacing)
+        ? this.measureWord(font, token.base, fontSize, letterSpacing, true)
         : 16;
       const isAccentSup =
         token.sup &&

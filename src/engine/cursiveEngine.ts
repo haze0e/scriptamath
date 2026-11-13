@@ -4,6 +4,7 @@ import {
   CursiveGlyphDef,
   CursiveStrokePoint,
   convertCustomVariantToCursive,
+  getCursiveProfile,
 } from '../data/cursiveAlphabet';
 import { AllographLibrary, HandwritingStyleSettings, PenSettings } from '../types';
 import { SeededNoise } from './noise';
@@ -73,6 +74,95 @@ export function sampleCatmullRom(
   return out;
 }
 
+/**
+ * Closed variable-width polygon ribbon rendering to prevent alpha-stacking beads.
+ */
+function drawSmoothInkRibbon(
+  ctx: CanvasRenderingContext2D,
+  pts: CursiveStrokePoint[],
+  baseWidth: number,
+  contrast: number,
+  inkColor: string,
+  penStyle: string,
+  drySkips: boolean,
+  noise: SeededNoise,
+  isColdStart: boolean,
+  coldStartEnabled: boolean,
+  inkPooling: boolean
+) {
+  if (pts.length < 2) return;
+  const leftRail: Array<{ x: number; y: number }> = [];
+  const rightRail: Array<{ x: number; y: number }> = [];
+  let arcLen = 0;
+
+  for (let k = 0; k < pts.length; k++) {
+    const pPrev = pts[Math.max(0, k - 1)];
+    const pNext = pts[Math.min(pts.length - 1, k + 1)];
+    const tx = pNext.x - pPrev.x;
+    const ty = pNext.y - pPrev.y;
+    const tLen = Math.max(0.001, Math.hypot(tx, ty));
+    const nx = -ty / tLen;
+    const ny = tx / tLen;
+    if (k > 0) arcLen += Math.hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y);
+
+    const dirY = ty / tLen; // +1 = downstroke, -1 = upstroke
+    const widthMod = 1.0 + dirY * 0.42 * contrast;
+    const coldTaper = isColdStart && coldStartEnabled && arcLen < 7
+      ? 0.45 + (arcLen / 7) * 0.55
+      : 1.0;
+    const endTaper = k === 0 || k === pts.length - 1 ? 0.65 : 1.0;
+    const halfW = Math.max(0.32, (baseWidth * widthMod * coldTaper * endTaper) * 0.5);
+
+    leftRail.push({ x: pts[k].x + nx * halfW, y: pts[k].y + ny * halfW });
+    rightRail.push({ x: pts[k].x - nx * halfW, y: pts[k].y - ny * halfW });
+  }
+
+  ctx.save();
+  ctx.fillStyle = inkColor;
+  ctx.globalAlpha = penStyle === 'fountain' ? 0.92 : penStyle === 'gel' ? 0.94 : 0.88;
+  ctx.beginPath();
+  ctx.moveTo(leftRail[0].x, leftRail[0].y);
+  for (let k = 1; k < leftRail.length; k++) ctx.lineTo(leftRail[k].x, leftRail[k].y);
+  for (let k = rightRail.length - 1; k >= 0; k--) ctx.lineTo(rightRail[k].x, rightRail[k].y);
+  ctx.closePath();
+  ctx.fill();
+
+  // Subtle ballpoint central track furrow (optional dry skips on fast upstrokes)
+  if (drySkips && penStyle === 'ballpoint') {
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.09)';
+    ctx.lineWidth = Math.max(0.4, baseWidth * 0.25);
+    ctx.beginPath();
+    let drawing = false;
+    for (let k = 1; k < pts.length; k++) {
+      if (noise.random() < 0.18) {
+        if (!drawing) { ctx.moveTo(pts[k - 1].x, pts[k - 1].y); drawing = true; }
+        ctx.lineTo(pts[k].x, pts[k].y);
+      } else {
+        drawing = false;
+      }
+    }
+    ctx.stroke();
+  }
+
+  // Turnaround ink pooling
+  if (inkPooling) {
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 0.72;
+    for (let k = 2; k < pts.length; k++) {
+      const v1x = pts[k - 1].x - pts[k - 2].x, v1y = pts[k - 1].y - pts[k - 2].y;
+      const v2x = pts[k].x - pts[k - 1].x, v2y = pts[k].y - pts[k - 1].y;
+      const d1 = Math.hypot(v1x, v1y), d2 = Math.hypot(v2x, v2y);
+      if (d1 > 0.2 && d2 > 0.2 && ((v1x * v2x + v1y * v2y) / (d1 * d2)) < -0.32 && noise.random() < 0.35) {
+        ctx.beginPath();
+        ctx.arc(pts[k - 1].x, pts[k - 1].y, baseWidth * 0.58, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+  ctx.restore();
+}
+
 export class CursiveEngine {
   private noise: SeededNoise;
   private allographToggle: Map<string, number> = new Map();
@@ -81,10 +171,11 @@ export class CursiveEngine {
     this.noise = noise;
   }
 
-  public canRenderWordSegment(word: string, allographs?: AllographLibrary): boolean {
+  public canRenderWordSegment(word: string, allographs?: AllographLibrary, style?: string): boolean {
     if (!word) return false;
+    const profile = getCursiveProfile(style);
     for (const ch of word) {
-      if (!CURSIVE_LOWERCASE[ch] && !CURSIVE_UPPERCASE[ch] && !allographs?.[ch]?.length) {
+      if (!profile.alphabet[ch] && !CURSIVE_LOWERCASE[ch] && !CURSIVE_UPPERCASE[ch] && !allographs?.[ch]?.length) {
         return false;
       }
     }
@@ -97,12 +188,13 @@ export class CursiveEngine {
     handwriting: HandwritingStyleSettings,
     allographs?: AllographLibrary
   ): number {
-    const xHeight = fontSize * 0.48;
+    const profile = getCursiveProfile(handwriting.cursiveStyle);
+    const xHeight = fontSize * profile.xHeightRatio;
     const spacingAdj = (handwriting.letterSpacing ?? 0) * 0.65;
     let total = 0;
     for (const ch of word) {
       const custom = allographs?.[ch]?.[0] ? convertCustomVariantToCursive(allographs[ch][0]) : null;
-      const def = custom || CURSIVE_LOWERCASE[ch] || CURSIVE_UPPERCASE[ch];
+      const def = custom || profile.alphabet[ch] || CURSIVE_UPPERCASE[ch] || CURSIVE_LOWERCASE[ch];
       total += def ? def.advance * xHeight + spacingAdj : fontSize * 0.55;
     }
     return Math.max(4, total);
@@ -123,15 +215,26 @@ export class CursiveEngine {
     isColdStart = false
   ): number {
     if (!word) return 0;
-    const xHeight = fontSize * 0.48;
-    const baseSlantDeg = handwriting.slantAngle ?? 12;
+    const profile = getCursiveProfile(handwriting.cursiveStyle);
+    const xHeight = fontSize * profile.xHeightRatio;
+    const baseSlantDeg = handwriting.slantAngle ?? profile.defaultSlantDeg;
     const slantRad = (baseSlantDeg * Math.PI) / 180;
     const spacingAdj = (handwriting.letterSpacing ?? 0) * 0.65;
     const warp = handwriting.loopWarp ?? 0.5;
     const baseWidth = Math.max(1.1, (pen.strokeWidth || 1.6) * (fontSize / 27) * 1.18);
 
-    const joinedPoints: CursiveStrokePoint[] = [];
+    const penRuns: CursiveStrokePoint[][] = [];
+    let currentRun: CursiveStrokePoint[] = [];
+
+    const flushRun = () => {
+      if (currentRun.length > 0) {
+        penRuns.push(currentRun);
+        currentRun = [];
+      }
+    };
+
     const delayedTasks: DelayedGlyphTask[] = [];
+    const immediateStrokes: CursiveStrokePoint[][] = [];
 
     let cursorX = startX;
     let prevDef: CursiveGlyphDef | null = null;
@@ -144,8 +247,9 @@ export class CursiveEngine {
       const customDef = customIdx !== null && allographs?.[ch]?.[customIdx]
         ? convertCustomVariantToCursive(allographs[ch][customIdx])
         : null;
-      const def = customDef || CURSIVE_LOWERCASE[ch] || CURSIVE_UPPERCASE[ch];
+      const def = customDef || profile.alphabet[ch] || CURSIVE_UPPERCASE[ch] || CURSIVE_LOWERCASE[ch];
       if (!def) {
+        flushRun();
         cursorX += fontSize * 0.55;
         prevExitAbs = null;
         prevDef = null;
@@ -166,8 +270,12 @@ export class CursiveEngine {
       }
 
       // Per-letter biometric variance
-      const charScaleX = 1.0 + (this.noise.random() - 0.5) * 0.08 * warp + (i > 1 && i < word.length - 1 ? 0.04 : 0);
-      const charScaleY = 1.0 + (this.noise.random() - 0.5) * 0.10 * warp - (i > 1 && i < word.length - 1 ? 0.05 : 0);
+      const charScaleX = (1.0 + (this.noise.random() - 0.5) * 0.08 * warp + (i > 1 && i < word.length - 1 ? 0.04 : 0)) * profile.loopWidthScale;
+      let charScaleY = 1.0 + (this.noise.random() - 0.5) * 0.10 * warp - (i > 1 && i < word.length - 1 ? 0.05 : 0);
+      if (profile.medialSquash > 0 && /^[mnuire]$/.test(ch) && i > 0 && i < word.length - 1) {
+        charScaleY *= 1.0 - profile.medialSquash * 0.4;
+      }
+
       const charBaselineY = baselineY + this.noise.noise1D(cursorX * 0.014 + baselineY * 0.008) * (handwriting.baselineWave ?? 0.4) * 4.2;
 
       const toAbs = (pt: CursiveStrokePoint, idxInChar: number): CursiveStrokePoint => {
@@ -193,28 +301,53 @@ export class CursiveEngine {
 
       const charAbsPts = rawStroke.map((pt, idx) => toAbs(pt, idx));
 
-      // Concave ligature bridge from previous char's exit point
-      if (prevExitAbs && charAbsPts.length > 0 && prevDef?.exitJoin !== 'break' && def.entryJoin !== 'break') {
+      // Concave ligature bridge or pen break
+      const canBridge =
+        prevExitAbs &&
+        charAbsPts.length > 0 &&
+        prevDef?.exitJoin !== 'break' &&
+        def.entryJoin !== 'break';
+
+      if (prevExitAbs && !canBridge) {
+        flushRun();
+      } else if (canBridge && charAbsPts.length > 0) {
+        const minStepX = 0.04 * xHeight;
+        if (charAbsPts[0].x < prevExitAbs!.x + minStepX) {
+          const shiftX = prevExitAbs!.x + minStepX - charAbsPts[0].x;
+          cursorX += shiftX;
+          for (const p of charAbsPts) p.x += shiftX;
+        }
         const entryAbs = charAbsPts[0];
-        const midX = (prevExitAbs.x + entryAbs.x) * 0.5;
+        const midX = (prevExitAbs!.x + entryAbs.x) * 0.5;
         const dip = prevDef?.exitJoin === 'high' ? 0.06 * xHeight : 0.08 * xHeight;
-        const midY = Math.max(prevExitAbs.y, entryAbs.y) + dip;
-        joinedPoints.push({ x: midX, y: midY, p: 0.75 });
+        const midY = Math.max(prevExitAbs!.y, entryAbs.y) + dip;
+        currentRun.push({ x: midX, y: midY, p: 0.75 });
       }
 
-      joinedPoints.push(...charAbsPts);
+      currentRun.push(...charAbsPts);
       prevExitAbs = charAbsPts[charAbsPts.length - 1];
 
-      // Queue delayed crossbars & tittles (or 'x' second stroke)
-      if (def.delayedStrokes && (handwriting.delayedCrossAndDot ?? true)) {
+      // Lift pen after descender if profile specifies it
+      if (profile.breakAfterDescenders && /^[gjqyz]$/.test(ch)) {
+        flushRun();
+        prevExitAbs = null;
+      }
+
+      // Queue delayed crossbars & tittles (or execute immediately if disabled)
+      if (def.delayedStrokes) {
         const mappedDelayed = def.delayedStrokes.map((s) => s.map((pt, idx) => toAbs(pt, idx)));
-        delayedTasks.push({
-          char: ch,
-          strokes: mappedDelayed,
-          stemX: cursorX + def.advance * 0.45 * xHeight,
-          crossbarY: charBaselineY - xHeight * 1.10,
-          tittlePos: ch === 'i' || ch === 'j' ? mappedDelayed[0][0] : undefined,
-        });
+        if (handwriting.delayedCrossAndDot ?? true) {
+          const crossbarNormY = -1.10;
+          delayedTasks.push({
+            char: ch,
+            strokes: mappedDelayed,
+            stemX: cursorX + def.advance * 0.45 * xHeight + (-crossbarNormY * xHeight) * Math.tan(slantRad),
+            crossbarY: charBaselineY - xHeight * 1.10,
+            tittlePos: ch === 'i' || ch === 'j' ? mappedDelayed[0][0] : undefined,
+          });
+        } else {
+          immediateStrokes.push(...mappedDelayed);
+        }
       }
 
       cursorX += def.advance * xHeight * charScaleX + spacingAdj;
@@ -222,55 +355,50 @@ export class CursiveEngine {
       prevChar = ch;
     }
 
-    // Draw continuous centripetal Catmull-Rom variable-width ink ribbon
-    const sampled = sampleCatmullRom(joinedPoints, 6);
-    if (sampled.length >= 2) {
+    flushRun();
+
+    // Render continuous variable-width ink ribbons per pen run
+    const contrast = (handwriting.cursivePressureContrast ?? profile.pressureContrast) *
+      (pen.penStyle === 'fountain' ? 1.35 : pen.penStyle === 'gel' ? 0.95 : 0.68);
+
+    for (let rIdx = 0; rIdx < penRuns.length; rIdx++) {
+      const runPts = penRuns[rIdx];
+      if (runPts.length < 2) continue;
+      const sampled = sampleCatmullRom(runPts, 6);
+      drawSmoothInkRibbon(
+        ctx,
+        sampled,
+        baseWidth,
+        contrast,
+        inkColor,
+        pen.penStyle,
+        pen.drySkips ?? false,
+        this.noise,
+        isColdStart && rIdx === 0,
+        handwriting.coldStartStarvation ?? true,
+        pen.inkPooling ?? false
+      );
+    }
+
+    // Execute immediate secondary strokes when delayedCrossAndDot is false
+    if (immediateStrokes.length > 0) {
       ctx.save();
       ctx.strokeStyle = inkColor;
       ctx.fillStyle = inkColor;
+      ctx.lineWidth = Math.max(1.0, baseWidth * 0.85);
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-
-      let arcLen = 0;
-      const contrast = (handwriting.cursivePressureContrast ?? 0.60) *
-        (pen.penStyle === 'fountain' ? 1.35 : pen.penStyle === 'gel' ? 0.95 : 0.68);
-
-      for (let k = 1; k < sampled.length; k++) {
-        const p1 = sampled[k - 1];
-        const p2 = sampled[k];
-        const dx = p2.x - p1.x;
-        const dy = p2.y - p1.y;
-        const ds = Math.hypot(dx, dy);
-        if (ds < 0.05) continue;
-        arcLen += ds;
-
-        const dirY = dy / ds; // +1 downstroke, -1 upstroke
-        const widthFactor = 1.0 + dirY * 0.40 * contrast;
-        const coldRamp = isColdStart && (handwriting.coldStartStarvation ?? true) && arcLen < 7
-          ? 0.44 + (arcLen / 7) * 0.48
-          : 0.90;
-        const drySkipMod = pen.drySkips && pen.penStyle === 'ballpoint' && dirY < -0.5 && this.noise.random() < 0.14
-          ? 0.58
-          : 1.0;
-
-        ctx.lineWidth = Math.max(0.55, baseWidth * widthFactor);
-        ctx.globalAlpha = Math.max(0.35, Math.min(0.95, coldRamp * drySkipMod));
-
-        ctx.beginPath();
-        ctx.moveTo(p1.x, p1.y);
-        ctx.lineTo(p2.x, p2.y);
-        ctx.stroke();
-
-        // Turnaround ink pooling
-        if (pen.inkPooling && k > 1) {
-          const p0 = sampled[k - 2];
-          const v1x = p1.x - p0.x, v1y = p1.y - p0.y;
-          const d0 = Math.hypot(v1x, v1y);
-          if (d0 > 0.2 && ((v1x * dx + v1y * dy) / (d0 * ds)) < -0.30 && this.noise.random() < 0.35) {
-            ctx.beginPath();
-            ctx.arc(p1.x, p1.y, baseWidth * 0.65, 0, Math.PI * 2);
-            ctx.fill();
-          }
+      ctx.globalAlpha = 0.88;
+      for (const stroke of immediateStrokes) {
+        if (stroke.length === 1) {
+          ctx.beginPath();
+          ctx.arc(stroke[0].x, stroke[0].y, Math.max(1.0, baseWidth * 0.55), 0, Math.PI * 2);
+          ctx.fill();
+        } else if (stroke.length >= 2) {
+          ctx.beginPath();
+          ctx.moveTo(stroke[0].x, stroke[0].y);
+          for (let s = 1; s < stroke.length; s++) ctx.lineTo(stroke[s].x, stroke[s].y);
+          ctx.stroke();
         }
       }
       ctx.restore();
@@ -317,3 +445,4 @@ export class CursiveEngine {
     return cursorX - startX;
   }
 }
+

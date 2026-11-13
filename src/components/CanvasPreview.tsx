@@ -104,7 +104,10 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
       appState.handwriting.wordSpacing,
       currentFont ?? undefined,
       appState.paper.template,
-      appState.handwriting.snapToRuledLines ?? true
+      appState.handwriting.snapToRuledLines ?? true,
+      appState.handwriting.cursiveMode,
+      allographs,
+      appState.handwriting.cursiveStyle
     );
     setPagesData(paginated);
 
@@ -121,6 +124,9 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
     appState.handwriting.wordSpacing,
     appState.handwriting.snapToRuledLines,
     appState.handwriting.randomSeed,
+    appState.handwriting.cursiveMode,
+    appState.handwriting.cursiveStyle,
+    allographs,
     appState.paper.roughWorkColumn,
     appState.paper.template,
     currentFont,

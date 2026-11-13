@@ -407,3 +407,770 @@ export function convertCustomVariantToCursive(variant: CustomGlyphVariant): Curs
     delayedStrokes: delayed,
   };
 }
+
+export interface CursiveProfileConfig {
+  id: string;
+  label: string;
+  xHeightRatio: number;         // Ratio of xHeight to fontSize
+  defaultSlantDeg: number;      // Vertical forward slant
+  pressureContrast: number;     // 0.0 (monoline) - 1.0 (fountain nib)
+  loopWidthScale: number;       // Horizontal loop tightness
+  medialSquash: number;         // 0.0 - 0.25 vertical flattening on medial m,n,u,i,r,e
+  breakAfterDescenders: boolean;// Lift pen after g, j, q, y, z
+  alphabet: Record<string, CursiveGlyphDef>;
+}
+
+export const PALMER_BUSINESS_LOWERCASE: Record<string, CursiveGlyphDef> = {
+  a: {
+    char: 'a', advance: 0.86, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.84, y: -0.14 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.46, y: -0.66 }, { x: 0.64, y: -0.98 },
+      { x: 0.30, y: -1.00 }, { x: 0.12, y: -0.44 }, { x: 0.36, y: 0.00 },
+      { x: 0.66, y: -0.92 }, { x: 0.68, y: -0.04 }, { x: 0.84, y: -0.14 }
+    ]],
+    altPrimaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.60, y: -0.94 }, { x: 0.26, y: -0.96 },
+      { x: 0.10, y: -0.40 }, { x: 0.38, y: 0.02 }, { x: 0.65, y: -0.84 },
+      { x: 0.68, y: -0.05 }, { x: 0.84, y: -0.14 }
+    ]],
+  },
+  b: {
+    char: 'b', advance: 0.80, entryJoin: 'baseline', exitJoin: 'high',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.78, y: -0.84 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.36, y: -1.15 }, { x: 0.46, y: -1.86 },
+      { x: 0.24, y: -1.62 }, { x: 0.20, y: -0.06 }, { x: 0.46, y: 0.02 },
+      { x: 0.68, y: -0.48 }, { x: 0.56, y: -0.90 }, { x: 0.46, y: -0.82 }, { x: 0.78, y: -0.84 }
+    ]],
+  },
+  c: {
+    char: 'c', advance: 0.72, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.70, y: -0.14 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.44, y: -0.70 }, { x: 0.58, y: -0.98 },
+      { x: 0.32, y: -1.00 }, { x: 0.12, y: -0.42 }, { x: 0.38, y: 0.00 }, { x: 0.70, y: -0.14 }
+    ]],
+  },
+  d: {
+    char: 'd', advance: 0.86, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.84, y: -0.14 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.62, y: -0.96 }, { x: 0.28, y: -1.00 },
+      { x: 0.12, y: -0.42 }, { x: 0.36, y: 0.00 }, { x: 0.64, y: -0.86 },
+      { x: 0.74, y: -1.84 }, { x: 0.64, y: -1.58 }, { x: 0.68, y: -0.04 }, { x: 0.84, y: -0.14 }
+    ]],
+  },
+  e: {
+    char: 'e', advance: 0.66, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.64, y: -0.14 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.38, y: -0.52 }, { x: 0.50, y: -0.84 },
+      { x: 0.34, y: -1.00 }, { x: 0.14, y: -0.48 }, { x: 0.36, y: 0.00 }, { x: 0.64, y: -0.14 }
+    ]],
+    altPrimaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.44, y: -0.60 }, { x: 0.44, y: -0.94 },
+      { x: 0.26, y: -0.96 }, { x: 0.16, y: -0.42 }, { x: 0.40, y: 0.00 }, { x: 0.64, y: -0.14 }
+    ]],
+  },
+  f: {
+    // Classic Palmer reversed lower belly closing onto baseline before exit
+    char: 'f', advance: 0.70, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.68, y: -0.14 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.36, y: -1.16 }, { x: 0.50, y: -1.86 },
+      { x: 0.28, y: -1.66 }, { x: 0.28, y: 0.00 }, { x: 0.26, y: 0.76 },
+      { x: 0.48, y: 0.64 }, { x: 0.46, y: 0.16 }, { x: 0.30, y: -0.06 }, { x: 0.68, y: -0.14 }
+    ]],
+  },
+  g: {
+    char: 'g', advance: 0.84, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.82, y: -0.14 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.62, y: -0.96 }, { x: 0.28, y: -1.00 },
+      { x: 0.10, y: -0.46 }, { x: 0.36, y: 0.00 }, { x: 0.66, y: -0.92 },
+      { x: 0.62, y: 0.76 }, { x: 0.34, y: 0.66 }, { x: 0.54, y: -0.04 }, { x: 0.82, y: -0.14 }
+    ]],
+  },
+  h: {
+    char: 'h', advance: 0.88, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.86, y: -0.14 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.34, y: -1.12 }, { x: 0.44, y: -1.86 },
+      { x: 0.22, y: -1.60 }, { x: 0.20, y: 0.00 }, { x: 0.38, y: -0.82 },
+      { x: 0.64, y: -0.98 }, { x: 0.70, y: -0.04 }, { x: 0.86, y: -0.14 }
+    ]],
+  },
+  i: {
+    char: 'i', advance: 0.44, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.42, y: -0.14 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.24, y: -0.98 }, { x: 0.26, y: -0.04 }, { x: 0.42, y: -0.14 }
+    ]],
+    delayedStrokes: [[{ x: 0.27, y: -1.42 }]],
+  },
+  j: {
+    char: 'j', advance: 0.52, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.50, y: -0.14 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.30, y: -0.98 }, { x: 0.28, y: 0.76 },
+      { x: 0.10, y: 0.62 }, { x: 0.32, y: -0.04 }, { x: 0.50, y: -0.14 }
+    ]],
+    delayedStrokes: [[{ x: 0.33, y: -1.42 }]],
+  },
+  k: {
+    char: 'k', advance: 0.82, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.80, y: -0.14 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.32, y: -1.14 }, { x: 0.40, y: -1.86 },
+      { x: 0.18, y: -1.62 }, { x: 0.18, y: 0.00 }, { x: 0.42, y: -0.74 },
+      { x: 0.60, y: -0.92 }, { x: 0.36, y: -0.46 }, { x: 0.62, y: -0.04 }, { x: 0.80, y: -0.14 }
+    ]],
+  },
+  l: {
+    char: 'l', advance: 0.48, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.46, y: -0.14 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.28, y: -1.16 }, { x: 0.36, y: -1.86 },
+      { x: 0.16, y: -1.62 }, { x: 0.22, y: -0.04 }, { x: 0.46, y: -0.14 }
+    ]],
+  },
+  m: {
+    char: 'm', advance: 1.24, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 1.22, y: -0.14 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.22, y: -0.98 }, { x: 0.34, y: 0.00 },
+      { x: 0.48, y: -0.80 }, { x: 0.62, y: -0.98 }, { x: 0.70, y: 0.00 },
+      { x: 0.84, y: -0.80 }, { x: 0.98, y: -0.98 }, { x: 1.06, y: -0.04 }, { x: 1.22, y: -0.14 }
+    ]],
+  },
+  n: {
+    char: 'n', advance: 0.88, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.86, y: -0.14 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.24, y: -0.98 }, { x: 0.36, y: 0.00 },
+      { x: 0.50, y: -0.80 }, { x: 0.64, y: -0.98 }, { x: 0.70, y: -0.04 }, { x: 0.86, y: -0.14 }
+    ]],
+  },
+  o: {
+    char: 'o', advance: 0.76, entryJoin: 'baseline', exitJoin: 'high',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.74, y: -0.84 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.58, y: -0.94 }, { x: 0.32, y: -1.00 },
+      { x: 0.12, y: -0.46 }, { x: 0.38, y: 0.00 }, { x: 0.64, y: -0.58 },
+      { x: 0.50, y: -0.92 }, { x: 0.74, y: -0.84 }
+    ]],
+  },
+  p: {
+    char: 'p', advance: 0.82, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.80, y: -0.14 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.26, y: -1.00 }, { x: 0.22, y: 0.74 },
+      { x: 0.28, y: -0.78 }, { x: 0.60, y: -0.96 }, { x: 0.68, y: -0.44 },
+      { x: 0.38, y: -0.02 }, { x: 0.80, y: -0.14 }
+    ]],
+  },
+  q: {
+    char: 'q', advance: 0.84, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.82, y: -0.14 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.62, y: -0.94 }, { x: 0.28, y: -1.00 },
+      { x: 0.10, y: -0.46 }, { x: 0.36, y: 0.00 }, { x: 0.64, y: -0.90 },
+      { x: 0.62, y: 0.74 }, { x: 0.78, y: 0.56 }, { x: 0.64, y: -0.04 }, { x: 0.82, y: -0.14 }
+    ]],
+  },
+  r: {
+    // Classic Palmer flat-shoulder peak slightly taller than x-height (-1.04) with sharp slant drop
+    char: 'r', advance: 0.68, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.66, y: -0.14 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.22, y: -1.04 }, { x: 0.36, y: -0.94 },
+      { x: 0.50, y: -0.96 }, { x: 0.48, y: -0.04 }, { x: 0.66, y: -0.14 }
+    ]],
+  },
+  s: {
+    // Classic Palmer pointed needle-crest 's' with closed lower belly
+    char: 's', advance: 0.68, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.66, y: -0.14 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.44, y: -1.06 }, { x: 0.56, y: -0.42 },
+      { x: 0.34, y: 0.00 }, { x: 0.14, y: -0.14 }, { x: 0.32, y: -0.14 }, { x: 0.66, y: -0.14 }
+    ]],
+  },
+  t: {
+    char: 't', advance: 0.56, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.54, y: -0.14 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.28, y: -1.56 }, { x: 0.32, y: -0.04 }, { x: 0.54, y: -0.14 }
+    ]],
+    delayedStrokes: [[{ x: 0.08, y: -1.12 }, { x: 0.54, y: -1.18 }]],
+  },
+  u: {
+    char: 'u', advance: 0.84, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.82, y: -0.14 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.24, y: -0.98 }, { x: 0.26, y: -0.12 },
+      { x: 0.44, y: 0.00 }, { x: 0.66, y: -0.98 }, { x: 0.68, y: -0.04 }, { x: 0.82, y: -0.14 }
+    ]],
+  },
+  v: {
+    char: 'v', advance: 0.74, entryJoin: 'baseline', exitJoin: 'high',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.72, y: -0.84 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.20, y: -0.98 }, { x: 0.40, y: 0.00 },
+      { x: 0.62, y: -0.90 }, { x: 0.72, y: -0.84 }
+    ]],
+  },
+  w: {
+    char: 'w', advance: 1.08, entryJoin: 'baseline', exitJoin: 'high',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 1.06, y: -0.84 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.20, y: -0.98 }, { x: 0.34, y: 0.00 },
+      { x: 0.56, y: -0.96 }, { x: 0.72, y: 0.00 }, { x: 0.96, y: -0.90 }, { x: 1.06, y: -0.84 }
+    ]],
+  },
+  x: {
+    // Classic Palmer arched first stroke + reverse crossbar slash
+    char: 'x', advance: 0.76, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.74, y: -0.14 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.20, y: -0.94 }, { x: 0.42, y: -0.48 },
+      { x: 0.60, y: -0.02 }, { x: 0.74, y: -0.14 }
+    ]],
+    delayedStrokes: [[{ x: 0.62, y: -0.96 }, { x: 0.14, y: -0.02 }]],
+  },
+  y: {
+    char: 'y', advance: 0.84, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.82, y: -0.14 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.22, y: -0.98 }, { x: 0.26, y: -0.10 },
+      { x: 0.44, y: 0.00 }, { x: 0.64, y: -0.96 }, { x: 0.60, y: 0.76 },
+      { x: 0.32, y: 0.64 }, { x: 0.58, y: -0.04 }, { x: 0.82, y: -0.14 }
+    ]],
+  },
+  z: {
+    // Classic Palmer cursive 3-shaped 'z' with descender loop
+    char: 'z', advance: 0.78, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.03, y: -0.12 }, exitPoint: { x: 0.76, y: -0.14 },
+    primaryStrokes: [[
+      { x: 0.03, y: -0.12 }, { x: 0.24, y: -0.98 }, { x: 0.52, y: -0.84 },
+      { x: 0.36, y: -0.10 }, { x: 0.56, y: 0.72 }, { x: 0.30, y: 0.62 },
+      { x: 0.54, y: -0.05 }, { x: 0.76, y: -0.14 }
+    ]],
+  },
+};
+
+export const FRENCH_CARREAUX_LOWERCASE: Record<string, CursiveGlyphDef> = {
+  a: {
+    char: 'a', advance: 1.04, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.06, y: -0.15 }, exitPoint: { x: 1.00, y: -0.15 },
+    primaryStrokes: [[
+      { x: 0.06, y: -0.15 }, { x: 0.50, y: -0.68 }, { x: 0.74, y: -0.96 },
+      { x: 0.36, y: -1.04 }, { x: 0.12, y: -0.50 }, { x: 0.42, y: 0.02 },
+      { x: 0.78, y: -0.92 }, { x: 0.80, y: -0.04 }, { x: 1.00, y: -0.15 }
+    ]],
+  },
+  b: {
+    char: 'b', advance: 0.94, entryJoin: 'baseline', exitJoin: 'high',
+    entryPoint: { x: 0.06, y: -0.15 }, exitPoint: { x: 0.92, y: -0.82 },
+    primaryStrokes: [[
+      { x: 0.06, y: -0.15 }, { x: 0.38, y: -1.25 }, { x: 0.48, y: -2.05 },
+      { x: 0.18, y: -1.80 }, { x: 0.22, y: -0.08 }, { x: 0.50, y: 0.02 },
+      { x: 0.82, y: -0.44 }, { x: 0.66, y: -0.96 }, { x: 0.52, y: -0.82 }, { x: 0.92, y: -0.82 }
+    ]],
+  },
+  c: {
+    char: 'c', advance: 0.86, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.06, y: -0.15 }, exitPoint: { x: 0.84, y: -0.15 },
+    primaryStrokes: [[
+      { x: 0.06, y: -0.15 }, { x: 0.50, y: -0.68 }, { x: 0.72, y: -0.96 },
+      { x: 0.36, y: -1.04 }, { x: 0.14, y: -0.48 }, { x: 0.46, y: 0.02 }, { x: 0.84, y: -0.15 }
+    ]],
+  },
+  d: {
+    // Authentic French Seyès unlooped straight ascender stem on 'd'
+    char: 'd', advance: 1.02, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.06, y: -0.15 }, exitPoint: { x: 1.00, y: -0.15 },
+    primaryStrokes: [[
+      { x: 0.06, y: -0.15 }, { x: 0.72, y: -0.96 }, { x: 0.34, y: -1.04 },
+      { x: 0.12, y: -0.50 }, { x: 0.42, y: 0.02 }, { x: 0.76, y: -0.85 },
+      { x: 0.78, y: -1.68 }, { x: 0.80, y: -0.04 }, { x: 1.00, y: -0.15 }
+    ]],
+  },
+  e: {
+    char: 'e', advance: 0.80, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.05, y: -0.15 }, exitPoint: { x: 0.78, y: -0.15 },
+    primaryStrokes: [[
+      { x: 0.05, y: -0.15 }, { x: 0.48, y: -0.46 }, { x: 0.62, y: -0.82 },
+      { x: 0.40, y: -1.04 }, { x: 0.16, y: -0.56 }, { x: 0.44, y: 0.02 }, { x: 0.78, y: -0.15 }
+    ]],
+  },
+  f: {
+    // Tall 3-unit ascender + deep 2-unit lower loop
+    char: 'f', advance: 0.78, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.06, y: -0.15 }, exitPoint: { x: 0.76, y: -0.15 },
+    primaryStrokes: [[
+      { x: 0.06, y: -0.15 }, { x: 0.38, y: -1.25 }, { x: 0.54, y: -2.06 },
+      { x: 0.26, y: -1.84 }, { x: 0.28, y: 0.00 }, { x: 0.28, y: 0.94 },
+      { x: 0.54, y: 0.80 }, { x: 0.38, y: -0.06 }, { x: 0.76, y: -0.15 }
+    ]],
+  },
+  g: {
+    char: 'g', advance: 0.98, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.06, y: -0.15 }, exitPoint: { x: 0.96, y: -0.15 },
+    primaryStrokes: [[
+      { x: 0.06, y: -0.15 }, { x: 0.74, y: -0.96 }, { x: 0.36, y: -1.04 },
+      { x: 0.12, y: -0.50 }, { x: 0.42, y: 0.02 }, { x: 0.76, y: -0.92 },
+      { x: 0.74, y: 0.94 }, { x: 0.38, y: 0.82 }, { x: 0.68, y: -0.04 }, { x: 0.96, y: -0.15 }
+    ]],
+  },
+  h: {
+    char: 'h', advance: 1.02, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.06, y: -0.15 }, exitPoint: { x: 1.00, y: -0.15 },
+    primaryStrokes: [[
+      { x: 0.06, y: -0.15 }, { x: 0.36, y: -1.22 }, { x: 0.46, y: -2.05 },
+      { x: 0.18, y: -1.80 }, { x: 0.22, y: 0.00 }, { x: 0.42, y: -0.84 },
+      { x: 0.74, y: -1.02 }, { x: 0.82, y: -0.04 }, { x: 1.00, y: -0.15 }
+    ]],
+  },
+  i: {
+    char: 'i', advance: 0.54, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.05, y: -0.15 }, exitPoint: { x: 0.52, y: -0.15 },
+    primaryStrokes: [[
+      { x: 0.05, y: -0.15 }, { x: 0.28, y: -1.00 }, { x: 0.30, y: -0.04 }, { x: 0.52, y: -0.15 }
+    ]],
+    delayedStrokes: [[{ x: 0.30, y: -1.46 }]],
+  },
+  j: {
+    char: 'j', advance: 0.62, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.05, y: -0.15 }, exitPoint: { x: 0.60, y: -0.15 },
+    primaryStrokes: [[
+      { x: 0.05, y: -0.15 }, { x: 0.36, y: -1.00 }, { x: 0.34, y: 0.94 },
+      { x: 0.08, y: 0.78 }, { x: 0.38, y: -0.04 }, { x: 0.60, y: -0.15 }
+    ]],
+    delayedStrokes: [[{ x: 0.38, y: -1.46 }]],
+  },
+  k: {
+    char: 'k', advance: 0.96, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.06, y: -0.15 }, exitPoint: { x: 0.94, y: -0.15 },
+    primaryStrokes: [[
+      { x: 0.06, y: -0.15 }, { x: 0.36, y: -1.25 }, { x: 0.44, y: -2.05 },
+      { x: 0.16, y: -1.78 }, { x: 0.20, y: 0.00 }, { x: 0.48, y: -0.78 },
+      { x: 0.72, y: -0.94 }, { x: 0.40, y: -0.48 }, { x: 0.74, y: -0.04 }, { x: 0.94, y: -0.15 }
+    ]],
+  },
+  l: {
+    char: 'l', advance: 0.58, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.05, y: -0.15 }, exitPoint: { x: 0.56, y: -0.15 },
+    primaryStrokes: [[
+      { x: 0.05, y: -0.15 }, { x: 0.32, y: -1.25 }, { x: 0.42, y: -2.05 },
+      { x: 0.14, y: -1.78 }, { x: 0.24, y: -0.04 }, { x: 0.56, y: -0.15 }
+    ]],
+  },
+  m: {
+    char: 'm', advance: 1.46, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.06, y: -0.15 }, exitPoint: { x: 1.44, y: -0.15 },
+    primaryStrokes: [[
+      { x: 0.06, y: -0.15 }, { x: 0.28, y: -1.02 }, { x: 0.42, y: 0.00 },
+      { x: 0.58, y: -0.84 }, { x: 0.74, y: -1.02 }, { x: 0.84, y: 0.00 },
+      { x: 1.00, y: -0.84 }, { x: 1.16, y: -1.02 }, { x: 1.24, y: -0.04 }, { x: 1.44, y: -0.15 }
+    ]],
+  },
+  n: {
+    char: 'n', advance: 1.04, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.06, y: -0.15 }, exitPoint: { x: 1.00, y: -0.15 },
+    primaryStrokes: [[
+      { x: 0.06, y: -0.15 }, { x: 0.28, y: -1.02 }, { x: 0.42, y: 0.00 },
+      { x: 0.58, y: -0.84 }, { x: 0.76, y: -1.02 }, { x: 0.82, y: -0.04 }, { x: 1.00, y: -0.15 }
+    ]],
+  },
+  o: {
+    char: 'o', advance: 0.90, entryJoin: 'baseline', exitJoin: 'high',
+    entryPoint: { x: 0.06, y: -0.15 }, exitPoint: { x: 0.88, y: -0.84 },
+    primaryStrokes: [[
+      { x: 0.06, y: -0.15 }, { x: 0.72, y: -0.94 }, { x: 0.40, y: -1.04 },
+      { x: 0.14, y: -0.52 }, { x: 0.44, y: 0.02 }, { x: 0.76, y: -0.54 },
+      { x: 0.58, y: -0.94 }, { x: 0.88, y: -0.84 }
+    ]],
+  },
+  p: {
+    // Classic French Seyès open unlooped descender stem + rounded right arch
+    char: 'p', advance: 0.98, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.06, y: -0.15 }, exitPoint: { x: 0.96, y: -0.15 },
+    primaryStrokes: [[
+      { x: 0.06, y: -0.15 }, { x: 0.30, y: -1.00 }, { x: 0.28, y: 0.92 },
+      { x: 0.30, y: -0.78 }, { x: 0.62, y: -1.02 }, { x: 0.82, y: -0.50 },
+      { x: 0.52, y: 0.00 }, { x: 0.42, y: -0.16 }, { x: 0.96, y: -0.15 }
+    ]],
+  },
+  q: {
+    char: 'q', advance: 0.98, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.06, y: -0.15 }, exitPoint: { x: 0.96, y: -0.15 },
+    primaryStrokes: [[
+      { x: 0.06, y: -0.15 }, { x: 0.72, y: -0.96 }, { x: 0.36, y: -1.04 },
+      { x: 0.12, y: -0.50 }, { x: 0.42, y: 0.02 }, { x: 0.74, y: -0.90 },
+      { x: 0.72, y: 0.94 }, { x: 0.90, y: 0.76 }, { x: 0.74, y: -0.04 }, { x: 0.96, y: -0.15 }
+    ]],
+  },
+  r: {
+    // Authentic French 'r' with miniature top-left eye loop + horizontal plateau + crisp vertical drop
+    char: 'r', advance: 0.82, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.05, y: -0.15 }, exitPoint: { x: 0.80, y: -0.15 },
+    primaryStrokes: [[
+      { x: 0.05, y: -0.15 }, { x: 0.26, y: -1.04 }, { x: 0.16, y: -0.88 },
+      { x: 0.30, y: -1.02 }, { x: 0.62, y: -1.00 }, { x: 0.60, y: -0.04 }, { x: 0.80, y: -0.15 }
+    ]],
+  },
+  s: {
+    // Round open snail-spiral French school 's'
+    char: 's', advance: 0.80, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.05, y: -0.15 }, exitPoint: { x: 0.78, y: -0.15 },
+    primaryStrokes: [[
+      { x: 0.05, y: -0.15 }, { x: 0.46, y: -1.04 }, { x: 0.68, y: -0.44 },
+      { x: 0.36, y: 0.02 }, { x: 0.18, y: -0.16 }, { x: 0.36, y: -0.22 }, { x: 0.78, y: -0.15 }
+    ]],
+  },
+  t: {
+    // Unlooped 2-unit French 't' stem
+    char: 't', advance: 0.68, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.05, y: -0.15 }, exitPoint: { x: 0.66, y: -0.15 },
+    primaryStrokes: [[
+      { x: 0.05, y: -0.15 }, { x: 0.34, y: -1.52 }, { x: 0.36, y: -0.04 }, { x: 0.66, y: -0.15 }
+    ]],
+    delayedStrokes: [[{ x: 0.10, y: -1.08 }, { x: 0.62, y: -1.10 }]],
+  },
+  u: {
+    char: 'u', advance: 0.98, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.06, y: -0.15 }, exitPoint: { x: 0.96, y: -0.15 },
+    primaryStrokes: [[
+      { x: 0.06, y: -0.15 }, { x: 0.28, y: -1.00 }, { x: 0.30, y: -0.15 },
+      { x: 0.52, y: 0.02 }, { x: 0.76, y: -1.00 }, { x: 0.78, y: -0.04 }, { x: 0.96, y: -0.15 }
+    ]],
+  },
+  v: {
+    char: 'v', advance: 0.88, entryJoin: 'baseline', exitJoin: 'high',
+    entryPoint: { x: 0.06, y: -0.15 }, exitPoint: { x: 0.86, y: -0.84 },
+    primaryStrokes: [[
+      { x: 0.06, y: -0.15 }, { x: 0.24, y: -1.02 }, { x: 0.48, y: 0.02 },
+      { x: 0.74, y: -0.90 }, { x: 0.86, y: -0.84 }
+    ]],
+  },
+  w: {
+    char: 'w', advance: 1.28, entryJoin: 'baseline', exitJoin: 'high',
+    entryPoint: { x: 0.06, y: -0.15 }, exitPoint: { x: 1.26, y: -0.84 },
+    primaryStrokes: [[
+      { x: 0.06, y: -0.15 }, { x: 0.24, y: -1.02 }, { x: 0.40, y: 0.02 },
+      { x: 0.64, y: -0.96 }, { x: 0.86, y: 0.02 }, { x: 1.12, y: -0.90 }, { x: 1.26, y: -0.84 }
+    ]],
+  },
+  x: {
+    // Authentic French continuous opposing-crescent 'x' ):( drawn in one sweep!
+    char: 'x', advance: 0.92, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.06, y: -0.15 }, exitPoint: { x: 0.90, y: -0.15 },
+    primaryStrokes: [[
+      { x: 0.06, y: -0.15 }, { x: 0.16, y: -0.94 }, { x: 0.44, y: -0.50 },
+      { x: 0.34, y: -0.04 }, { x: 0.14, y: -0.10 }, { x: 0.44, y: -0.50 },
+      { x: 0.74, y: -0.96 }, { x: 0.56, y: -0.96 }, { x: 0.44, y: -0.50 },
+      { x: 0.62, y: 0.02 }, { x: 0.90, y: -0.15 }
+    ]],
+  },
+  y: {
+    char: 'y', advance: 0.98, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.06, y: -0.15 }, exitPoint: { x: 0.96, y: -0.15 },
+    primaryStrokes: [[
+      { x: 0.06, y: -0.15 }, { x: 0.26, y: -1.00 }, { x: 0.30, y: -0.12 },
+      { x: 0.52, y: 0.02 }, { x: 0.74, y: -0.98 }, { x: 0.72, y: 0.94 },
+      { x: 0.38, y: 0.80 }, { x: 0.68, y: -0.04 }, { x: 0.96, y: -0.15 }
+    ]],
+  },
+  z: {
+    // Classical French school 'z' with tiny upper step + symmetric 2-unit lower loop
+    char: 'z', advance: 0.90, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.06, y: -0.15 }, exitPoint: { x: 0.88, y: -0.15 },
+    primaryStrokes: [[
+      { x: 0.06, y: -0.15 }, { x: 0.28, y: -1.00 }, { x: 0.64, y: -0.98 },
+      { x: 0.26, y: -0.04 }, { x: 0.68, y: 0.92 }, { x: 0.36, y: 0.80 },
+      { x: 0.66, y: -0.06 }, { x: 0.88, y: -0.15 }
+    ]],
+  },
+};
+
+export const RUSHED_MEDICAL_LOWERCASE: Record<string, CursiveGlyphDef> = {
+  a: {
+    char: 'a', advance: 0.88, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.86, y: -0.12 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.62, y: -0.84 }, { x: 0.28, y: -0.88 },
+      { x: 0.10, y: -0.38 }, { x: 0.38, y: 0.00 }, { x: 0.66, y: -0.78 },
+      { x: 0.68, y: -0.04 }, { x: 0.86, y: -0.12 }
+    ]],
+  },
+  b: {
+    char: 'b', advance: 0.82, entryJoin: 'baseline', exitJoin: 'high',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.80, y: -0.68 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.36, y: -1.42 }, { x: 0.22, y: -1.28 },
+      { x: 0.20, y: -0.04 }, { x: 0.44, y: 0.02 }, { x: 0.70, y: -0.44 },
+      { x: 0.56, y: -0.78 }, { x: 0.80, y: -0.68 }
+    ]],
+  },
+  c: {
+    char: 'c', advance: 0.72, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.70, y: -0.12 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.56, y: -0.82 }, { x: 0.26, y: -0.86 },
+      { x: 0.12, y: -0.34 }, { x: 0.42, y: 0.00 }, { x: 0.70, y: -0.12 }
+    ]],
+  },
+  d: {
+    char: 'd', advance: 0.88, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.86, y: -0.12 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.60, y: -0.82 }, { x: 0.26, y: -0.88 },
+      { x: 0.12, y: -0.36 }, { x: 0.38, y: 0.00 }, { x: 0.68, y: -1.44 },
+      { x: 0.68, y: -0.04 }, { x: 0.86, y: -0.12 }
+    ]],
+  },
+  e: {
+    char: 'e', advance: 0.68, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.66, y: -0.12 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.50, y: -0.66 }, { x: 0.30, y: -0.84 },
+      { x: 0.14, y: -0.36 }, { x: 0.40, y: 0.00 }, { x: 0.66, y: -0.12 }
+    ]],
+  },
+  f: {
+    char: 'f', advance: 0.70, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.68, y: -0.12 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.46, y: -1.44 }, { x: 0.28, y: -1.32 },
+      { x: 0.24, y: 0.48 }, { x: 0.44, y: 0.36 }, { x: 0.34, y: -0.06 }, { x: 0.68, y: -0.12 }
+    ]],
+  },
+  g: {
+    // Rapid rushed descender break
+    char: 'g', advance: 0.84, entryJoin: 'baseline', exitJoin: 'break',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.80, y: 0.10 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.62, y: -0.82 }, { x: 0.28, y: -0.88 },
+      { x: 0.10, y: -0.38 }, { x: 0.36, y: 0.00 }, { x: 0.64, y: -0.80 },
+      { x: 0.58, y: 0.48 }, { x: 0.36, y: 0.38 }, { x: 0.80, y: 0.10 }
+    ]],
+  },
+  h: {
+    char: 'h', advance: 0.90, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.88, y: -0.12 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.36, y: -1.42 }, { x: 0.22, y: -1.26 },
+      { x: 0.20, y: 0.00 }, { x: 0.40, y: -0.72 }, { x: 0.66, y: -0.82 },
+      { x: 0.72, y: -0.04 }, { x: 0.88, y: -0.12 }
+    ]],
+  },
+  i: {
+    char: 'i', advance: 0.46, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.44, y: -0.12 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.24, y: -0.82 }, { x: 0.28, y: -0.04 }, { x: 0.44, y: -0.12 }
+    ]],
+    delayedStrokes: [[{ x: 0.32, y: -1.18 }]],
+  },
+  j: {
+    char: 'j', advance: 0.54, entryJoin: 'baseline', exitJoin: 'break',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.50, y: 0.08 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.30, y: -0.82 }, { x: 0.26, y: 0.48 },
+      { x: 0.10, y: 0.36 }, { x: 0.50, y: 0.08 }
+    ]],
+    delayedStrokes: [[{ x: 0.36, y: -1.18 }]],
+  },
+  k: {
+    char: 'k', advance: 0.84, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.82, y: -0.12 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.34, y: -1.42 }, { x: 0.20, y: -1.25 },
+      { x: 0.18, y: 0.00 }, { x: 0.42, y: -0.62 }, { x: 0.62, y: -0.74 },
+      { x: 0.34, y: -0.38 }, { x: 0.66, y: -0.04 }, { x: 0.82, y: -0.12 }
+    ]],
+  },
+  l: {
+    char: 'l', advance: 0.48, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.46, y: -0.12 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.30, y: -1.42 }, { x: 0.20, y: -1.26 },
+      { x: 0.22, y: -0.04 }, { x: 0.46, y: -0.12 }
+    ]],
+  },
+  m: {
+    // Semi-flattened fast medial waves
+    char: 'm', advance: 1.28, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 1.26, y: -0.12 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.24, y: -0.76 }, { x: 0.38, y: -0.04 },
+      { x: 0.56, y: -0.74 }, { x: 0.72, y: -0.04 }, { x: 0.94, y: -0.74 },
+      { x: 1.08, y: -0.04 }, { x: 1.26, y: -0.12 }
+    ]],
+  },
+  n: {
+    char: 'n', advance: 0.90, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.88, y: -0.12 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.26, y: -0.76 }, { x: 0.40, y: -0.04 },
+      { x: 0.62, y: -0.76 }, { x: 0.74, y: -0.04 }, { x: 0.88, y: -0.12 }
+    ]],
+  },
+  o: {
+    char: 'o', advance: 0.76, entryJoin: 'baseline', exitJoin: 'high',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.74, y: -0.70 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.58, y: -0.80 }, { x: 0.30, y: -0.86 },
+      { x: 0.12, y: -0.40 }, { x: 0.38, y: 0.02 }, { x: 0.64, y: -0.48 },
+      { x: 0.52, y: -0.78 }, { x: 0.74, y: -0.70 }
+    ]],
+  },
+  p: {
+    char: 'p', advance: 0.84, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.82, y: -0.12 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.24, y: -0.80 }, { x: 0.20, y: 0.48 },
+      { x: 0.28, y: -0.66 }, { x: 0.62, y: -0.80 }, { x: 0.70, y: -0.34 },
+      { x: 0.40, y: -0.02 }, { x: 0.82, y: -0.12 }
+    ]],
+  },
+  q: {
+    char: 'q', advance: 0.86, entryJoin: 'baseline', exitJoin: 'break',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.82, y: 0.04 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.62, y: -0.82 }, { x: 0.28, y: -0.86 },
+      { x: 0.10, y: -0.38 }, { x: 0.36, y: 0.00 }, { x: 0.64, y: -0.78 },
+      { x: 0.60, y: 0.48 }, { x: 0.82, y: 0.04 }
+    ]],
+  },
+  r: {
+    // Needle rapid medical 'r' (minimal shoulder, tight forward flick)
+    char: 'r', advance: 0.64, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.62, y: -0.12 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.26, y: -0.86 }, { x: 0.46, y: -0.74 },
+      { x: 0.48, y: -0.04 }, { x: 0.62, y: -0.12 }
+    ]],
+  },
+  s: {
+    // Flattened rapid wave 's'
+    char: 's', advance: 0.66, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.64, y: -0.12 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.38, y: -0.86 }, { x: 0.54, y: -0.30 },
+      { x: 0.22, y: 0.00 }, { x: 0.64, y: -0.12 }
+    ]],
+  },
+  t: {
+    char: 't', advance: 0.56, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.54, y: -0.12 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.28, y: -1.26 }, { x: 0.32, y: -0.04 }, { x: 0.54, y: -0.12 }
+    ]],
+    delayedStrokes: [[{ x: 0.08, y: -0.92 }, { x: 0.58, y: -0.98 }]],
+  },
+  u: {
+    char: 'u', advance: 0.86, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.84, y: -0.12 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.24, y: -0.76 }, { x: 0.28, y: -0.12 },
+      { x: 0.46, y: 0.00 }, { x: 0.66, y: -0.76 }, { x: 0.70, y: -0.04 }, { x: 0.84, y: -0.12 }
+    ]],
+  },
+  v: {
+    char: 'v', advance: 0.74, entryJoin: 'baseline', exitJoin: 'high',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.72, y: -0.68 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.22, y: -0.78 }, { x: 0.42, y: 0.00 },
+      { x: 0.64, y: -0.74 }, { x: 0.72, y: -0.68 }
+    ]],
+  },
+  w: {
+    char: 'w', advance: 1.10, entryJoin: 'baseline', exitJoin: 'high',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 1.08, y: -0.68 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.22, y: -0.78 }, { x: 0.36, y: 0.00 },
+      { x: 0.56, y: -0.74 }, { x: 0.74, y: 0.00 }, { x: 0.96, y: -0.74 }, { x: 1.08, y: -0.68 }
+    ]],
+  },
+  x: {
+    char: 'x', advance: 0.76, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.74, y: -0.12 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.20, y: -0.82 }, { x: 0.62, y: -0.04 }, { x: 0.74, y: -0.12 }
+    ]],
+    delayedStrokes: [[{ x: 0.62, y: -0.84 }, { x: 0.14, y: -0.02 }]],
+  },
+  y: {
+    char: 'y', advance: 0.84, entryJoin: 'baseline', exitJoin: 'break',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.78, y: 0.06 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.24, y: -0.78 }, { x: 0.28, y: -0.10 },
+      { x: 0.46, y: 0.00 }, { x: 0.64, y: -0.78 }, { x: 0.58, y: 0.48 },
+      { x: 0.36, y: 0.36 }, { x: 0.78, y: 0.06 }
+    ]],
+  },
+  z: {
+    // Rapid STEM crossbarred 'ƶ'
+    char: 'z', advance: 0.78, entryJoin: 'baseline', exitJoin: 'baseline',
+    entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.76, y: -0.12 },
+    primaryStrokes: [[
+      { x: 0.04, y: -0.10 }, { x: 0.22, y: -0.82 }, { x: 0.62, y: -0.84 },
+      { x: 0.20, y: -0.04 }, { x: 0.58, y: 0.00 }, { x: 0.76, y: -0.12 }
+    ]],
+    delayedStrokes: [[{ x: 0.18, y: -0.44 }, { x: 0.64, y: -0.46 }]],
+  },
+};
+
+export const CURSIVE_STYLE_PROFILES: Record<string, CursiveProfileConfig> = {
+  'collegiate-flow': {
+    id: 'collegiate-flow',
+    label: 'Collegiate Flow',
+    xHeightRatio: 0.42,
+    defaultSlantDeg: 12,
+    pressureContrast: 0.65,
+    loopWidthScale: 1.0,
+    medialSquash: 0.05,
+    breakAfterDescenders: false,
+    alphabet: CURSIVE_LOWERCASE,
+  },
+  'palmer-business': {
+    id: 'palmer-business',
+    label: 'Palmer Business Cursive',
+    xHeightRatio: 0.40,
+    defaultSlantDeg: 21,
+    pressureContrast: 0.55,
+    loopWidthScale: 0.88,
+    medialSquash: 0.04,
+    breakAfterDescenders: false,
+    alphabet: PALMER_BUSINESS_LOWERCASE,
+  },
+  'french-grands-carreaux': {
+    id: 'french-grands-carreaux',
+    label: 'French School (Grands Carreaux)',
+    xHeightRatio: 0.36,
+    defaultSlantDeg: 5,
+    pressureContrast: 0.82,
+    loopWidthScale: 1.06,
+    medialSquash: 0.0,
+    breakAfterDescenders: false,
+    alphabet: FRENCH_CARREAUX_LOWERCASE,
+  },
+  'rushed-stem-medical': {
+    id: 'rushed-stem-medical',
+    label: 'Rushed STEM / Medical',
+    xHeightRatio: 0.43,
+    defaultSlantDeg: 17.5,
+    pressureContrast: 0.42,
+    loopWidthScale: 0.94,
+    medialSquash: 0.18,
+    breakAfterDescenders: true,
+    alphabet: RUSHED_MEDICAL_LOWERCASE,
+  },
+};
+
+export function getCursiveProfile(style?: string): CursiveProfileConfig {
+  return CURSIVE_STYLE_PROFILES[style || 'collegiate-flow'] || CURSIVE_STYLE_PROFILES['collegiate-flow'];
+}

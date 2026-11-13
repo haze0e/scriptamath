@@ -1,6 +1,10 @@
 import { PaperScanSettings, PaperTemplateId, ScanFilter } from '../types';
 import { SeededNoise } from './noise';
 
+export function getPaperRuleOriginY(template: PaperTemplateId, topMargin: number): number {
+  return template === 'exam-booklet' ? topMargin + 44 : topMargin;
+}
+
 export class InkAndScanPipeline {
   private noise: SeededNoise;
   private scratchCanvas: HTMLCanvasElement | null = null;
@@ -350,7 +354,8 @@ export class InkAndScanPipeline {
     // Ruling lines
     ctx.strokeStyle = '#cbd5e1';
     ctx.lineWidth = 0.8;
-    let currY = topMargin + 30;
+    const ruleOriginY = topMargin + 44;
+    let currY = ruleOriginY;
     while (currY < height - 60) {
       ctx.beginPath();
       ctx.moveTo(60, currY);
@@ -363,7 +368,7 @@ export class InkAndScanPipeline {
     ctx.strokeStyle = '#e53e3e';
     ctx.lineWidth = 1.0;
     ctx.beginPath();
-    ctx.moveTo(130, topMargin + 30);
+    ctx.moveTo(130, ruleOriginY);
     ctx.lineTo(130, height - 60);
     ctx.stroke();
   }
@@ -781,7 +786,7 @@ export class InkAndScanPipeline {
 
     // Natural handheld rotation angle per page (typically ~0.5° - 1.6° when tilted)
     const rotAngle = (this.noise.random() - 0.48) * 0.038 * intensity;
-    const baseScale = 1.0 - (0.012 + this.noise.random() * 0.008) * intensity;
+    const baseScale = 1.0 - (0.022 + this.noise.random() * 0.008) * intensity;
     const cx = width * 0.5;
     const cy = height * 0.5;
 
@@ -811,19 +816,18 @@ export class InkAndScanPipeline {
     const yawTilt = (this.noise.random() - 0.5) * 0.006 * intensity;
 
     for (let sx = 0; sx < width; sx += stripW) {
-      const sw = Math.min(stripW, width - sx);
+      const sw = Math.min(stripW + 1, width - sx);
       const uSpine = Math.max(0, 1 - sx / spineSpan);
       const spineLiftY = -maxSpineLift * Math.pow(uSpine, 2.2);
       const spineScaleY = 1 - 0.008 * intensity * uSpine * uSpine;
 
-      // Projective taper: interpolate x subtly inward near top + organic yaw
       const xNorm = sx / width - 0.5;
-      const projX = sx - xNorm * topTrapInset * 0.5;
-      const projTilt = xNorm * topTrapInset * 0.0005 + yawTilt * 0.0004;
+      const topShiftX = -xNorm * topTrapInset;
+      const shearX = (xNorm * topTrapInset) / height;
 
       ctx.save();
-      ctx.translate(projX, spineLiftY);
-      ctx.transform(1, projTilt, 0, spineScaleY, 0, 0);
+      ctx.translate(sx + topShiftX, spineLiftY);
+      ctx.transform(1, yawTilt * 0.0003, shearX, spineScaleY, 0, 0);
       ctx.drawImage(tempCanvas, sx, 0, sw, height, 0, 0, sw, height);
       ctx.restore();
     }
@@ -1057,20 +1061,6 @@ export class InkAndScanPipeline {
             continue;
           }
 
-          // Graphite pencil neutral grey exemption (prevents pencil rough math from turning navy blue)
-          const isPencilGraphite =
-            Math.abs(r - g) < 12 &&
-            Math.abs(g - b) < 12 &&
-            lum >= 60 &&
-            lum <= 195;
-          if (isPencilGraphite) {
-            const gp = Math.max(35, Math.round(lum * 0.85));
-            d[i] = gp;
-            d[i + 1] = gp + 2;
-            d[i + 2] = gp + 6;
-            continue;
-          }
-
           if (lum > 218) {
             d[i] = Math.min(255, Math.max(200, Math.round(targetR + grain)));
             d[i + 1] = Math.min(255, Math.max(200, Math.round(targetG + grain)));
@@ -1081,10 +1071,15 @@ export class InkAndScanPipeline {
 
             const isRedInk = r > b + 20 && r > g + 20;
             const isGenuinelyBlue = b > r + 15 && b > g + 10;
+            const isNeutralInk = Math.abs(r - g) < 12 && Math.abs(g - b) < 12;
 
-            let inkR = Math.max(10, r * 0.68);
-            let inkG = Math.max(16, g * 0.76);
-            let inkB = isGenuinelyBlue ? Math.min(245, b * 1.20 + 16) : Math.max(10, b * (isRedInk ? 0.65 : 0.72));
+            let inkR = isNeutralInk ? Math.max(18, r * 0.78) : Math.max(10, r * 0.68);
+            let inkG = isNeutralInk ? Math.max(20, g * 0.79) : Math.max(16, g * 0.76);
+            let inkB = isGenuinelyBlue
+              ? Math.min(245, b * 1.20 + 16)
+              : isNeutralInk
+              ? Math.max(22, b * 0.81)
+              : Math.max(10, b * (isRedInk ? 0.65 : 0.72));
 
             if (isGenuinelyBlue && isUpperZoneY && x < litLimitX) {
               const litZone = (1.0 - x / litLimitX) * yFactor;

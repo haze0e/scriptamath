@@ -36,6 +36,7 @@ dist/
 # Local notes and audit bundles
 IMPORVEMTN.txt
 scriptamath_codebase_bundle.txt
+scratch/
 
 .DS_Store
 .AppleDouble

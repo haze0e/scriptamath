@@ -170,7 +170,18 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
         persona: id,
       },
       pen: { ...appState.pen },
-      paper: { ...appState.paper },
+      paper: {
+        template: appState.paper.template,
+        scanFilter: appState.paper.scanFilter,
+        inkBleed: appState.paper.inkBleed,
+        shadowIntensity: appState.paper.shadowIntensity,
+        perspectiveTilt: appState.paper.perspectiveTilt,
+        showPaperTexture: appState.paper.showPaperTexture,
+        showMarginGuides: appState.paper.showMarginGuides,
+        spiralHoles: appState.paper.spiralHoles,
+        paperWarmth: appState.paper.paperWarmth,
+        roughWorkInstrument: appState.paper.roughWorkInstrument,
+      },
     };
     saveCustomPersona(profile);
     setCustomPersonas(loadCustomPersonas());
@@ -699,7 +710,40 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                 </div>
 
                 {appState.handwriting.cursiveMode === 'vector-cursive' && (
-                  <div className="pt-2 border-t border-[#222a3d] space-y-1.5 animate-fade-in">
+                  <div className="pt-2 border-t border-[#222a3d] space-y-2.5 animate-fade-in">
+                    <div className="space-y-1.5">
+                      <span className="text-[11px] font-medium text-slate-300 block">Cursive Personality</span>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {[
+                          { id: 'collegiate-flow', label: 'Collegiate Flow', slant: 12 },
+                          { id: 'palmer-business', label: 'Palmer Business', slant: 21 },
+                          { id: 'french-grands-carreaux', label: 'French School', slant: 5 },
+                          { id: 'rushed-stem-medical', label: 'Rushed STEM/Med', slant: 17.5 },
+                        ].map((st) => (
+                          <button
+                            key={st.id}
+                            onClick={() =>
+                              setAppState((p) => ({
+                                ...p,
+                                handwriting: {
+                                  ...p.handwriting,
+                                  cursiveStyle: st.id as any,
+                                  slantAngle: st.slant,
+                                },
+                              }))
+                            }
+                            className={`px-2 py-1.5 rounded-lg border text-left text-[11px] transition-colors ${
+                              (appState.handwriting.cursiveStyle ?? 'collegiate-flow') === st.id
+                                ? 'border-blue-500 bg-blue-950/40 text-blue-300 font-semibold'
+                                : 'border-[#262d42] bg-[#11151f] text-slate-300 hover:text-white'
+                            }`}
+                          >
+                            {st.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-slate-300">Nib Up/Down Pressure Contrast</span>
                       <span className="font-mono text-blue-400">

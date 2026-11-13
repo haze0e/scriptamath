@@ -1087,7 +1087,7 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
         const unescapedInner = inner
           .replace(/__MATRIX_SLASH__/g, '\\\\')
           .replace(/__MATRIX_AMP__/g, '&');
-        const rawRows = unescapedInner.split(/\\\\/g);
+        const rawRows = unescapedInner.split(/\\\\(?:\s*\[[^\]]*\])?/g);
         const cells: MathToken[][][] = [];
         for (const r of rawRows) {
           if (!r.trim()) continue;
@@ -1282,9 +1282,19 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
       i += 6;
       continue;
     }
-    const sizedDelimMatch = expr.slice(i).match(/^\\(?:Big|Bigg|bigg|big)[lr]?(?:\\([{}])|([()\[\]|]))/);
+    const sizedDelimMatch = expr.slice(i).match(/^\\(?:Big|Bigg|bigg|big)[lr]?(?:\\(l?vert|r?vert|[{}])|([()\[\]|.]))/);
     if (sizedDelimMatch) {
-      const dChar = (sizedDelimMatch[1] || sizedDelimMatch[2]) as '(' | ')' | '[' | ']' | '{' | '}' | '|';
+      const macroSym = sizedDelimMatch[1];
+      const rawSym = sizedDelimMatch[2];
+      if (rawSym === '.') {
+        i += sizedDelimMatch[0].length;
+        continue;
+      }
+      const dChar = (
+        macroSym === 'vert' || macroSym === 'lvert' || macroSym === 'rvert'
+          ? '|'
+          : macroSym || rawSym
+      ) as '(' | ')' | '[' | ']' | '{' | '}' | '|';
       tokens.push({ type: 'delimiter', char: dChar, isBig: true });
       i += sizedDelimMatch[0].length;
       continue;
@@ -1302,12 +1312,6 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
     if (expr.startsWith('\\vert', i)) {
       tokens.push({ type: 'delimiter', char: '|' });
       i += 5;
-      continue;
-    }
-    const bigBarMatch = expr.slice(i).match(/^\\(Big|Bigg|bigg|big)\|/);
-    if (bigBarMatch) {
-      tokens.push({ type: 'delimiter', char: '|', isBig: true });
-      i += bigBarMatch[0].length;
       continue;
     }
 

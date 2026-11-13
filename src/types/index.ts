@@ -4,7 +4,13 @@ export type PenStyle = 'ballpoint' | 'gel' | 'fountain';
 export type PaperTemplateId = 'indian-ruled' | 'unruled-bond' | 'engineering-graph' | 'exam-booklet';
 export type ScanFilter = 'original' | 'natural-photo' | 'camscanner' | 'bw-xerox';
 export type CursiveMode = 'print' | 'semi-cursive' | 'vector-cursive';
-export type CursiveStylePreset = 'collegiate-flow' | 'neat-spencerian' | 'rushed-notes';
+export type CursiveStylePreset =
+  | 'collegiate-flow'
+  | 'palmer-business'
+  | 'french-grands-carreaux'
+  | 'rushed-stem-medical'
+  | 'neat-spencerian'
+  | 'rushed-notes';
 export type HandwritingPersona =
   | 'chitesh-stem-notes'
   | 'boy-stem-cursive'
@@ -12,6 +18,9 @@ export type HandwritingPersona =
   | 'exam-prep-rushed'
   | 'clean-lecture'
   | 'true-cursive-notes'
+  | 'palmer-business-cursive'
+  | 'french-school-cursive'
+  | 'rushed-medical-cursive'
   | 'custom'
   | (string & {});
 
