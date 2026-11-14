@@ -256,22 +256,25 @@ export class CursiveEngine {
         continue;
       }
 
-      // Anti-duplication allograph switching
+      // Dynamic allograph switching with spatial and anti-duplication diversity
       let rawStroke = def.primaryStrokes[0];
       if (def.altPrimaryStrokes && def.altPrimaryStrokes.length > 0) {
+        const pool = [def.primaryStrokes[0], ...def.altPrimaryStrokes];
+        const spatialHash = Math.abs(Math.sin(cursorX * 0.05 + baselineY * 0.03 + i * 7.9 + ch.charCodeAt(0) * 3.1));
         const lastIdx = this.allographToggle.get(ch) ?? 0;
-        const useAlt = (prevChar === ch && handwriting.antiDuplication) || (lastIdx === 0 && this.noise.random() < 0.45);
-        if (useAlt) {
-          rawStroke = def.altPrimaryStrokes[0];
-          this.allographToggle.set(ch, 1);
-        } else {
-          this.allographToggle.set(ch, 0);
+        let chosenIdx = Math.floor(spatialHash * pool.length) % pool.length;
+        if (prevChar === ch && chosenIdx === lastIdx) {
+          chosenIdx = (chosenIdx + 1) % pool.length;
         }
+        rawStroke = pool[chosenIdx];
+        this.allographToggle.set(ch, chosenIdx);
       }
 
-      // Per-letter biometric variance
-      const charScaleX = (1.0 + (this.noise.random() - 0.5) * 0.08 * warp + (i > 1 && i < word.length - 1 ? 0.04 : 0)) * profile.loopWidthScale;
-      let charScaleY = 1.0 + (this.noise.random() - 0.5) * 0.10 * warp - (i > 1 && i < word.length - 1 ? 0.05 : 0);
+      // Per-letter biometric variance with organic spatial variance across lines
+      const spatialDriftX = Math.sin(cursorX * 0.04 + baselineY * 0.02 + i * 3.7);
+      const spatialDriftY = Math.cos(cursorX * 0.03 + baselineY * 0.02 + i * 4.1);
+      const charScaleX = (1.0 + spatialDriftX * 0.07 * warp + (this.noise.random() - 0.5) * 0.06 * warp + (i > 1 && i < word.length - 1 ? 0.04 : 0)) * profile.loopWidthScale;
+      let charScaleY = 1.0 + spatialDriftY * 0.08 * warp + (this.noise.random() - 0.5) * 0.07 * warp - (i > 1 && i < word.length - 1 ? 0.05 : 0);
       if (profile.medialSquash > 0 && /^[mnuire]$/.test(ch) && i > 0 && i < word.length - 1) {
         charScaleY *= 1.0 - profile.medialSquash * 0.4;
       }
@@ -288,9 +291,9 @@ export class CursiveEngine {
           ny = ny * (1 - blend) + (-0.80) * blend;
         }
 
-        // Loop warp noise
-        const jx = this.noise.get2D(cursorX * 0.04 + idxInChar * 0.7, baselineY * 0.03) * 0.06 * warp;
-        const jy = this.noise.get2D(cursorX * 0.04 + 19.3, baselineY * 0.03 + idxInChar * 0.7) * 0.07 * warp;
+        // Spatial 2D loop warp noise (distinct per letter position on page)
+        const jx = this.noise.get2D(cursorX * 0.06 + idxInChar * 0.9, baselineY * 0.04 + i * 2.3) * 0.08 * warp;
+        const jy = this.noise.get2D(cursorX * 0.06 + 27.4, baselineY * 0.04 + idxInChar * 0.9 + i * 1.9) * 0.07 * warp;
         nx += jx;
         ny += jy;
 

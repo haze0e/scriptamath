@@ -156,8 +156,8 @@ export function normalizeStudentTypography(text: string): string {
       if (idx % 2 === 1) return part;
 
       return part
-        .replace(/---/g, '—')
-        .replace(/-- /g, '— ')
+        .replace(/(?<=[^\s\r\n])[ \t]*---+[ \t]*(?=[^\s\r\n])/g, ' — ') // Only inline em-dash between words on same line (preserve standalone --- lines for separator rules!)
+        .replace(/(?<=[^\s\r\n])[ \t]*--[ \t]*(?=[^\s\r\n])/g, ' — ')
         .replace(/\.\.\./g, '…')
         .replace(/(\w)'(\w)/g, '$1’$2') // Contractions like don't -> don’t
         .replace(/(\w)'(?=\s|[.,;!?)]|$)/g, '$1’') // Plural possessives: students' -> students’
@@ -637,8 +637,8 @@ export function parseRawAIOutput(rawText: string): DocumentBlock[] {
       continue;
     }
 
-    // Horizontal Separator Rule (---, ***, ___)
-    if (line.match(/^[-*_]{3,}$/)) {
+    // Horizontal Separator Rule (---, ***, ___, —, –––)
+    if (line.match(/^([-*_—–\s]{3,}|[—–]+)$/)) {
       blocks.push({
         id: `blk-${++blockIdCounter}`,
         type: 'separator',
@@ -646,6 +646,11 @@ export function parseRawAIOutput(rawText: string): DocumentBlock[] {
         tokens: [],
         rawText: '---',
       });
+      continue;
+    }
+
+    // Filter out stray orphan dashes or bullets floating on their own line (prevents markdown dash artifacts)
+    if (/^[-—–*]$/.test(line)) {
       continue;
     }
 

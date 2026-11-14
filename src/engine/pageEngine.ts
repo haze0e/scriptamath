@@ -16,6 +16,7 @@ import {
   MathFraction,
   MathScript,
   MathRoot,
+  MathDelimiter,
   MathBoxed,
   MathBigOp,
   MathMatrix,
@@ -503,26 +504,6 @@ export class PageEngine {
 
     this.currentLineObstacles = [];
     this.prevLineObstacles = [];
-
-    // Sideways Margin Annotation / Gutter Scribble (Handwritten style)
-    if (paper.marginAnnotation && pageData.pageNumber === 1) {
-      textCtx.save();
-      textCtx.translate(75, TOP_MARGIN + 280);
-      textCtx.rotate(-Math.PI / 2);
-      this.renderWordOrChars(
-        textCtx,
-        font,
-        paper.marginAnnotation,
-        0,
-        0,
-        14,
-        pen.bodyColorHex,
-        0.15,
-        { ...handwriting, slantAngle: (handwriting.slantAngle ?? 0) - 4 },
-        textRoughCanvas
-      );
-      textCtx.restore();
-    }
 
     // Dynamic Right-Margin Hand Divider Line & Rough Work Column
     if (hasRightMargin) {
@@ -1171,12 +1152,13 @@ export class PageEngine {
         );
         currentY += advanceY;
       } else if (block.type === 'separator') {
-        // Hand-sketched horizontal dividing rule (---)
+        // Hand-sketched horizontal dividing rule (---) spanning across the content width
         // Uses authentic body pen ink (never hardcoded slate gray!), parabolic bow (4-9px), tilted slope, and organic endpoints
         currentY += BASE_LINE_HEIGHT * (0.35 + (this.noise.random() - 0.5) * 0.1);
-        const sepStartX = baseMarginX + (this.noise.random() * 35);
-        const sepEndX = RIGHT_MARGIN - 70 + (this.noise.random() - 0.5) * 55;
-        const sepSlope = ((-0.8 + this.noise.random() * 1.8) * Math.PI) / 180;
+        const sepStartX = baseMarginX + (this.noise.random() * 12);
+        const rightBoundary = (this.currentRightMargin || RIGHT_MARGIN) - 30;
+        const sepEndX = rightBoundary + (this.noise.random() - 0.5) * 20;
+        const sepSlope = ((-0.6 + this.noise.random() * 1.4) * Math.PI) / 180;
         const sepEndDrift = Math.tan(sepSlope) * (sepEndX - sepStartX);
 
         this.mathRenderer.drawHandLine(
@@ -1187,7 +1169,7 @@ export class PageEngine {
           currentY + sepEndDrift,
           1.2,
           bodyInkColor,
-          5.5,
+          4.5,
           6
         );
         currentY += BASE_LINE_HEIGHT * (0.65 + (this.noise.random() - 0.5) * 0.15);
@@ -1401,6 +1383,138 @@ export class PageEngine {
   }
 
   /**
+   * Annotates matching delimiter pairs ((), [], {}) with the vertical span of their enclosed content
+   * so brackets dynamically envelope tall fractions, sums, and matrices instead of mechanically scaling.
+   */
+  private annotateDelimitersWithContentSpan(tokens: MathToken[], fontSize: number) {
+    const stack: Array<{ token: MathDelimiter; char: string; index: number }> = [];
+    const openChars = new Set(['(', '[', '{']);
+    const matchMap: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
+
+    for (let i = 0; i < tokens.length; i++) {
+      const t = tokens[i];
+      if (t.type === 'delimiter') {
+        if (openChars.has(t.char)) {
+          stack.push({ token: t, char: t.char, index: i });
+        } else if (matchMap[t.char]) {
+          const matchOpen = matchMap[t.char];
+          let openEntry: { token: MathDelimiter; char: string; index: number } | undefined;
+          for (let s = stack.length - 1; s >= 0; s--) {
+            if (stack[s].char === matchOpen) {
+              openEntry = stack.splice(s, 1)[0];
+              break;
+            }
+          }
+          if (openEntry) {
+            const innerTokens = tokens.slice(openEntry.index + 1, i);
+            if (innerTokens.length > 0) {
+              const span = this.getTokensVerticalSpan(innerTokens, fontSize);
+              const customSpan = {
+                ascent: Math.max(fontSize * 0.72, span.ascent),
+                descent: Math.max(fontSize * 0.24, span.descent),
+              };
+              (openEntry.token as any).customSpan = customSpan;
+              (t as any).customSpan = customSpan;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Identifies atomic, non-breaking mathematical groups (e.g. function calls `g(u)`, `g'(u)`, `\sin(x)`,
+   * sub-indexed variables `W_{t_k}(w)`, or short parenthesized terms `(a + b)`).
+   * Ensures that line wrapping never severs a function name from its arguments or closing parentheses.
+   */
+  private getAtomicMathGroup(
+    tokens: MathToken[],
+    startIndex: number,
+    font: opentype.Font,
+    fontSize: number
+  ): { width: number; count: number } {
+    if (startIndex >= tokens.length) return { width: 0, count: 0 };
+    const first = tokens[startIndex];
+
+    const findMatchingDelimiter = (openIdx: number, openChar: string, closeChar: string): number => {
+      let depth = 1;
+      for (let k = openIdx + 1; k < tokens.length; k++) {
+        const tok = tokens[k];
+        if (tok.type === 'delimiter') {
+          if (tok.char === openChar) depth++;
+          else if (tok.char === closeChar) {
+            depth--;
+            if (depth === 0) return k;
+          }
+        }
+      }
+      return -1;
+    };
+
+    // Case 1: Function name / identifier followed by primes and/or arguments: e.g. g(u), g'(u), f(x), \sin(x)
+    const isFunctionOrVar =
+      (first.type === 'text' && (first.isFunction || /^[a-zA-Z]$/.test(first.text))) ||
+      first.type === 'script';
+
+    if (isFunctionOrVar && startIndex + 1 < tokens.length) {
+      let cursor = startIndex + 1;
+      while (cursor < tokens.length && tokens[cursor].type === 'operator' && (tokens[cursor] as any).symbol?.startsWith("'")) {
+        cursor++;
+      }
+      if (cursor < tokens.length && tokens[cursor].type === 'delimiter') {
+        const dChar = (tokens[cursor] as MathDelimiter).char;
+        const closeMap: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
+        if (closeMap[dChar]) {
+          const closeIdx = findMatchingDelimiter(cursor, dChar, closeMap[dChar]);
+          if (closeIdx !== -1) {
+            let totalW = 0;
+            for (let k = startIndex; k <= closeIdx; k++) {
+              totalW += this.estimateTokenWidth(font, tokens[k], fontSize);
+            }
+            if (totalW < 420) {
+              return { width: totalW, count: closeIdx - startIndex + 1 };
+            }
+          }
+        }
+      }
+    }
+
+    // Case 2: Opening delimiter with enclosed short expression: e.g. (u), (x_i), (a + b), (1, ..., n)
+    if (first.type === 'delimiter' && (first.char === '(' || first.char === '[' || first.char === '{')) {
+      const closeMap: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
+      const closeIdx = findMatchingDelimiter(startIndex, first.char, closeMap[first.char]);
+      if (closeIdx !== -1) {
+        let totalW = 0;
+        for (let k = startIndex; k <= closeIdx; k++) {
+          totalW += this.estimateTokenWidth(font, tokens[k], fontSize);
+        }
+        if (totalW < 360) {
+          return { width: totalW, count: closeIdx - startIndex + 1 };
+        }
+      }
+    }
+
+    // Case 3: Base with following script or subscript: e.g. W_{s}, M_T
+    if (startIndex + 1 < tokens.length && tokens[startIndex + 1].type === 'script') {
+      const w1 = this.estimateTokenWidth(font, first, fontSize);
+      const w2 = this.estimateTokenWidth(font, tokens[startIndex + 1], fontSize);
+      return { width: w1 + w2, count: 2 };
+    }
+
+    // Case 4: Token preceding an immediate closing delimiter: never leave closing delimiter alone on next line!
+    if (startIndex + 1 < tokens.length && tokens[startIndex + 1].type === 'delimiter') {
+      const nextChar = (tokens[startIndex + 1] as MathDelimiter).char;
+      if (nextChar === ')' || nextChar === ']' || nextChar === '}') {
+        const w1 = this.estimateTokenWidth(font, first, fontSize);
+        const w2 = this.estimateTokenWidth(font, tokens[startIndex + 1], fontSize);
+        return { width: w1 + w2, count: 2 };
+      }
+    }
+
+    return { width: this.estimateTokenWidth(font, first, fontSize), count: 1 };
+  }
+
+  /**
    * Renders tokens with line-wrapping along ruled notebook lines (for paragraphs and questions).
    */
   private renderTokensWithWrapping(
@@ -1415,6 +1529,7 @@ export class PageEngine {
     handwriting: AppState['handwriting'],
     roughCanvas: ReturnType<typeof rough.canvas>
   ): number {
+    this.annotateDelimitersWithContentSpan(tokens, fontSize);
     const span = this.getTokensVerticalSpan(tokens, fontSize);
     let currX = startX;
     // Push baseline down if numerators or ascenders are tall so they don't collide with the line above
@@ -1573,9 +1688,11 @@ export class PageEngine {
 
       // Inline math tokens: delimiters, operators, fractions, scripts, roots
       const tokenWidth = this.estimateTokenWidth(font, token, fontSize);
+      const atomic = this.getAtomicMathGroup(tokens, i, font, fontSize);
+      const checkWidth = atomic.count > 1 ? atomic.width : tokenWidth;
 
-      if (currX + tokenWidth > this.currentRightMargin && currX > startX + 100) {
-        // Wrap to next line before rendering math token
+      if (currX + checkWidth > this.currentRightMargin && currX > startX + 60) {
+        // Wrap to next line before rendering math token (preserves atomic function calls e.g. g'(u))
         this.prevLineObstacles = this.currentLineObstacles;
         this.currentLineObstacles = [];
         currY += trueLineHeight;
@@ -1647,6 +1764,8 @@ export class PageEngine {
     let wristState = this.initWristCluster(startX);
     const lines: Array<{ y: number; width: number; height: number }> = [];
 
+    this.annotateDelimitersWithContentSpan(tokens, fontSize);
+
     // Section 3A: Full-Line Uphill Angle Drift on unruled paper (+0.3° to +1.6°)
     const isUnruled = this.currentPaper?.template === 'unruled-bond';
     const lineSlopeDeg = isUnruled
@@ -1658,13 +1777,15 @@ export class PageEngine {
     for (let tIdx = 0; tIdx < tokens.length; tIdx++) {
       const token = tokens[tIdx];
       const tokenWidth = this.estimateTokenWidth(font, token, fontSize);
+      const atomic = this.getAtomicMathGroup(tokens, tIdx, font, fontSize);
+      const checkWidth = atomic.count > 1 ? atomic.width : tokenWidth;
 
       if (token.type === 'operator' && (token.symbol === '=' || token.symbol === '+' || token.symbol === '⇒' || token.symbol === '-')) {
         horizonRandomWalkY += (this.noise.random() - 0.48) * (isUnruled ? 2.5 : 1.0);
       }
 
-      // Long-equation wrapping: auto-wrap onto continuation line indented by +45px
-      if (currX + tokenWidth > this.currentRightMargin - 20 && currX > startX + 20) {
+      // Long-equation wrapping: auto-wrap onto continuation line indented by +45px (never break atomic g'(u))
+      if (currX + checkWidth > this.currentRightMargin - 20 && currX > startX + 20) {
         this.prevLineObstacles = this.currentLineObstacles;
         this.currentLineObstacles = [];
         const lineWidth = currX - (lineCount > 1 ? startX + 45 : startX);
@@ -1826,7 +1947,7 @@ export class PageEngine {
     }
 
     if (token.type === 'delimiter') {
-      return this.renderDelimiter(ctx, token.char, x, y, fontSize, inkColor, token.isBig);
+      return this.renderDelimiter(ctx, token.char, x, y, fontSize, inkColor, token.isBig, (token as any).customSpan);
     }
 
     if (token.type === 'operator') {
@@ -1946,6 +2067,7 @@ export class PageEngine {
 
   /**
    * Renders delimiters: (), [], {}, ||
+   * Uses content-aware dynamic spans when enclosing tall mathematical formulas
    */
   private renderDelimiter(
     ctx: CanvasRenderingContext2D,
@@ -1954,10 +2076,19 @@ export class PageEngine {
     y: number,
     fontSize: number,
     inkColor: string,
-    isBig = false
+    isBig = false,
+    customSpan?: { ascent: number; descent: number }
   ): number {
-    const topY = isBig ? y - fontSize * 1.42 : y - fontSize * 0.72;
-    const bottomY = isBig ? y + fontSize * 0.82 : y + fontSize * 0.24;
+    let topY: number;
+    let bottomY: number;
+
+    if (customSpan) {
+      topY = y - customSpan.ascent - 6;
+      bottomY = y + customSpan.descent + 6;
+    } else {
+      topY = isBig ? y - fontSize * 1.42 : y - fontSize * 0.72;
+      bottomY = isBig ? y + fontSize * 0.82 : y + fontSize * 0.24;
+    }
 
     if (char === '(' || char === ')') {
       return this.mathRenderer.drawParenthesis(ctx, x, topY, bottomY, char === '(', inkColor, fontSize);
@@ -3128,14 +3259,15 @@ export class PageEngine {
       ctx.save();
       ctx.globalAlpha = baseAlpha;
       ctx.shadowColor = inkColor;
-      ctx.shadowBlur = 0.40;
+      // Disable shadow blur on small characters (<18px) to eliminate algorithmic blurring on decimals and table digits
+      ctx.shadowBlur = fontSize < 18 ? 0 : 0.38;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       result.path.draw(ctx);
 
-      // Variable pen-pressure thickening / thinning via thin stroke along the glyph outline
+      // Variable pen-pressure thickening / thinning via thin stroke along the glyph outline (only on main body text)
       const penWidthScale = ((this.currentPen?.strokeWidth ?? 1.6) / 1.6);
-      if (pressureWave > -0.22) {
+      if (pressureWave > -0.22 && fontSize >= 18) {
         const p2d = new Path2D(result.path.toPathData(2));
         ctx.strokeStyle = inkColor;
         ctx.lineWidth = (0.22 + (pressureWave + 0.22) * 0.38) * (fontSize / 28) * penWidthScale;
@@ -3513,34 +3645,84 @@ export class PageEngine {
     }
 
     // 2. Table structure lines:
-    // Organic horizontal line under header (swept stroke overshooting slightly) - drawn unconditionally
+    // Organic horizontal line under header with natural hand overshoot (drawn authentically across the table)
     this.mathRenderer.drawHandLine(
       ctx,
-      startX,
+      startX - 6,
       headerBottomY,
-      startX + totalTableWidth,
-      headerBottomY,
+      startX + totalTableWidth + 8,
+      headerBottomY + (this.noise.random() - 0.5) * 1.5,
       1.8,
       inkColor,
-      1.8,
+      2.0,
       5
     );
 
     // Full table box & grid lines if tableLines is enabled
     if (handwriting.tableLines ?? true) {
-      // Top horizontal boundary
-      this.mathRenderer.drawHandLine(ctx, startX, startY, startX + totalTableWidth, startY, 1.5, inkColor, 1.8, 5);
-      // Bottom horizontal boundary
-      this.mathRenderer.drawHandLine(ctx, startX, startY + totalTableHeight, startX + totalTableWidth, startY + totalTableHeight, 1.5, inkColor, 1.8, 5);
-      // Left vertical boundary
-      this.mathRenderer.drawHandLine(ctx, startX, startY, startX, startY + totalTableHeight, 1.5, inkColor, 1.8, 5);
-      // Right vertical boundary
-      this.mathRenderer.drawHandLine(ctx, startX + totalTableWidth, startY, startX + totalTableWidth, startY + totalTableHeight, 1.5, inkColor, 1.8, 5);
+      // Top horizontal boundary with organic student overshoots
+      this.mathRenderer.drawHandLine(
+        ctx,
+        startX - 5,
+        startY,
+        startX + totalTableWidth + 6,
+        startY + (this.noise.random() - 0.5) * 1.2,
+        1.4,
+        inkColor,
+        1.8,
+        5
+      );
+      // Bottom horizontal boundary with natural hand tilt
+      this.mathRenderer.drawHandLine(
+        ctx,
+        startX - 5,
+        startY + totalTableHeight,
+        startX + totalTableWidth + 5,
+        startY + totalTableHeight + (this.noise.random() - 0.5) * 1.5,
+        1.4,
+        inkColor,
+        1.8,
+        5
+      );
+      // Left vertical boundary with subtle hand tremor
+      this.mathRenderer.drawHandLine(
+        ctx,
+        startX,
+        startY - 4,
+        startX + (this.noise.random() - 0.5) * 1.8,
+        startY + totalTableHeight + 4,
+        1.3,
+        inkColor,
+        1.6,
+        4
+      );
+      // Right vertical boundary with slight hand slope
+      this.mathRenderer.drawHandLine(
+        ctx,
+        startX + totalTableWidth,
+        startY - 4,
+        startX + totalTableWidth + (this.noise.random() - 0.5) * 1.8,
+        startY + totalTableHeight + 4,
+        1.3,
+        inkColor,
+        1.6,
+        4
+      );
 
       // Subtle horizontal divider lines between data rows
       for (let r = 1; r < rows.length; r++) {
         const ry = rowYPositions[r];
-        this.mathRenderer.drawHandLine(ctx, startX, ry, startX + totalTableWidth, ry, 0.85, inkColor, 1.1, 2);
+        this.mathRenderer.drawHandLine(
+          ctx,
+          startX - 2,
+          ry,
+          startX + totalTableWidth + 2,
+          ry + (this.noise.random() - 0.5) * 1.0,
+          0.85,
+          inkColor,
+          1.1,
+          2
+        );
       }
 
       // Vertical column divider lines with organic hand tremor and non-CAD overshoots
@@ -3551,9 +3733,9 @@ export class PageEngine {
         this.mathRenderer.drawHandLine(
           ctx,
           cx + startJitter,
-          startY - 2,
+          startY - 3,
           cx + endJitter,
-          startY + totalTableHeight + 2,
+          startY + totalTableHeight + 3,
           1.1,
           inkColor,
           1.4,

@@ -38,7 +38,10 @@ export class InkAndScanPipeline {
   ) {
     ctx.save();
 
-    // Base paper colors
+    // Base paper colors with organic per-page camera auto-exposure and white-balance shifts
+    const pageHueMod = Math.sin(pageIndex * 2.3) * 1.5;
+    const pageExpMod = Math.cos(pageIndex * 1.7) * 1.5;
+
     let baseColor = '#fcfbf8'; // soft warm ivory
     if (paper.template === 'unruled-bond') baseColor = '#fbfbf9';
     if (paper.template === 'engineering-graph') baseColor = '#fafcfe';
@@ -47,9 +50,19 @@ export class InkAndScanPipeline {
     ctx.fillStyle = baseColor;
     ctx.fillRect(0, 0, width, height);
 
+    // Subtle per-page sensor exposure and lighting micro-shift across the sheet
+    const pageTintAlpha = 0.012 + Math.abs(Math.sin(pageIndex * 3.1)) * 0.015;
+    const isSlightlyCooler = Math.sin(pageIndex * 4.7) > 0.3;
+    ctx.fillStyle = isSlightlyCooler
+      ? `rgba(235, 240, 248, ${pageTintAlpha})`
+      : `rgba(250, 242, 230, ${pageTintAlpha})`;
+    ctx.fillRect(0, 0, width, height);
+
     // Warmth / vintage aging tint
     if (paper.paperWarmth && paper.paperWarmth > 0) {
-      ctx.fillStyle = `rgba(235, 205, 145, ${Math.min(0.42, paper.paperWarmth * 0.32)})`;
+      const pageWarmthJitter = (Math.sin(pageIndex * 2.8) * 0.04);
+      const effectiveWarmth = Math.max(0, paper.paperWarmth + pageWarmthJitter);
+      ctx.fillStyle = `rgba(235, 205, 145, ${Math.min(0.42, effectiveWarmth * 0.32)})`;
       ctx.fillRect(0, 0, width, height);
     }
 
@@ -624,9 +637,9 @@ export class InkAndScanPipeline {
   ) {
     // 1. Apply Scanner Contrast Filter FIRST (so it doesn't bleach out shadows & grain)
     if (paper.scanFilter !== 'original') {
-      const awbJitter = (this.noise.random() - 0.5) * 0.06;
+      const awbJitter = (Math.sin(pageIndex * 2.7) * 0.04) + (this.noise.random() - 0.5) * 0.03;
       const effectiveWarmth = Math.max(0, Math.min(1.0, (paper.paperWarmth ?? 0) + awbJitter));
-      this.applyScannerFilter(ctx, width, height, paper.scanFilter, effectiveWarmth);
+      this.applyScannerFilter(ctx, width, height, paper.scanFilter, effectiveWarmth, pageIndex);
     }
 
     // 2. Re-apply subtle physical paper fiber grain OVER the whitened scan
@@ -634,12 +647,15 @@ export class InkAndScanPipeline {
       this.drawPaperTextureFibers(ctx, width, height, pageIndex);
     }
 
-    // 3. Ambient mobile phone desk lighting gradient
+    // 3. Ambient mobile phone desk lighting gradient with natural per-page angle/position drift
     this.applyAmbientDeskLighting(ctx, width, height, pageIndex);
 
-    // 4. Smartphone corner shadow gradient (if enabled)
+    // 4. Smartphone corner shadow gradient & camera vignette (organically distributed across pages)
     if (paper.shadowIntensity > 0) {
       this.drawSmartphoneCornerShadow(ctx, width, height, paper.shadowIntensity, pageIndex);
+    } else {
+      // Still apply subtle camera lens optical vignette around outer perimeter even without phone shadow
+      this.applyCameraVignette(ctx, width, height, 0.45, pageIndex);
     }
 
     // 5. Spine page curl & 2D keystone camera perspective tilt
@@ -661,26 +677,36 @@ export class InkAndScanPipeline {
 
   /**
    * Ambient Mobile Phone Lighting Gradient:
-   * Recreates natural desk lamp / room light falloff where top-left receives warm illumination
-   * while bottom-right has a subtle cool falloff.
+   * Recreates natural desk lamp / room light falloff where the illumination source
+   * drifts organically in angle, position, and warmth between pages as the notebook is turned.
    */
   public applyAmbientDeskLighting(
     ctx: CanvasRenderingContext2D,
     width: number,
     height: number,
-    _pageIndex: number = 0
+    pageIndex: number = 0
   ) {
     ctx.save();
-    const lightAngle = (Math.PI * 0.25) + (this.noise.random() - 0.5) * 0.30;
-    const lx1 = width * 0.5 - Math.cos(lightAngle) * width * 0.55;
-    const ly1 = height * 0.5 - Math.sin(lightAngle) * height * 0.55;
-    const lx2 = width * 0.5 + Math.cos(lightAngle) * width * 0.55;
-    const ly2 = height * 0.5 + Math.sin(lightAngle) * height * 0.55;
+    // In authentic multi-page homework photography, lighting rotates and drifts between shots
+    const pageAngleOffset = Math.sin(pageIndex * 1.618) * 0.42;
+    const lightAngle = (Math.PI * 0.25) + pageAngleOffset + (this.noise.random() - 0.5) * 0.18;
+
+    // Shift the lamp hotspot center per page
+    const shiftX = Math.cos(pageIndex * 2.1) * width * 0.08;
+    const shiftY = Math.sin(pageIndex * 2.1) * height * 0.08;
+
+    const lx1 = width * 0.5 + shiftX - Math.cos(lightAngle) * width * 0.55;
+    const ly1 = height * 0.5 + shiftY - Math.sin(lightAngle) * height * 0.55;
+    const lx2 = width * 0.5 + shiftX + Math.cos(lightAngle) * width * 0.55;
+    const ly2 = height * 0.5 + shiftY + Math.sin(lightAngle) * height * 0.55;
+
+    const warmAlpha = 0.024 + Math.abs(Math.sin(pageIndex * 0.85)) * 0.028 + this.noise.random() * 0.012;
+    const coolAlpha = 0.032 + Math.abs(Math.cos(pageIndex * 0.85)) * 0.028 + this.noise.random() * 0.012;
 
     const grad = ctx.createLinearGradient(lx1, ly1, lx2, ly2);
-    grad.addColorStop(0, `rgba(255, 250, 240, ${0.035 + this.noise.random() * 0.02})`); // subtle warm highlight
-    grad.addColorStop(0.6, 'rgba(0, 0, 0, 0)');
-    grad.addColorStop(1, `rgba(20, 25, 40, ${0.05 + this.noise.random() * 0.025})`);     // subtle cool shadow falloff
+    grad.addColorStop(0, `rgba(255, 248, 235, ${warmAlpha})`); // subtle warm highlight
+    grad.addColorStop(0.55 + (this.noise.random() - 0.5) * 0.10, 'rgba(0, 0, 0, 0)');
+    grad.addColorStop(1, `rgba(20, 25, 42, ${coolAlpha})`);     // subtle cool shadow falloff
 
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, width, height);
@@ -898,92 +924,24 @@ export class InkAndScanPipeline {
   }
 
   /**
-   * Smartphone corner shadow & warm desk lighting with per-page natural placement
+   * Camera lens optical vignette around outer perimeter with organic per-page lens axis drift
    */
-  private drawSmartphoneCornerShadow(
+  private applyCameraVignette(
     ctx: CanvasRenderingContext2D,
     width: number,
     height: number,
-    intensity: number,
+    intensity: number = 0.45,
     pageIndex: number = 0
   ) {
     ctx.save();
-    const pageIntensity = intensity * (0.88 + this.noise.random() * 0.24);
+    const pageHashX = (Math.abs(Math.sin((pageIndex + 1) * 31.4159)) * 10000) % 1.0;
+    const pageHashY = (Math.abs(Math.cos((pageIndex + 1) * 27.1828)) * 10000) % 1.0;
 
-    // 1. Diagonal phone cast shadow: mostly bottom-right, occasionally bottom-left
-    const isBottomLeft = (pageIndex % 4 === 3) || (this.noise.random() < 0.20);
-
-    let startX: number;
-    let startY: number;
-    let focusX: number;
-    let focusY: number;
-    let outerR: number;
-
-    if (isBottomLeft) {
-      startX = width * (0.04 + this.noise.random() * 0.06);
-      startY = height * (0.91 + this.noise.random() * 0.07);
-      focusX = width * (0.22 + this.noise.random() * 0.08);
-      focusY = height * (0.72 + this.noise.random() * 0.08);
-      outerR = width * (0.68 + this.noise.random() * 0.16);
-    } else {
-      startX = width * (0.92 + this.noise.random() * 0.06);
-      startY = height * (0.91 + this.noise.random() * 0.07);
-      focusX = width * (0.72 + this.noise.random() * 0.08);
-      focusY = height * (0.72 + this.noise.random() * 0.08);
-      outerR = width * (0.68 + this.noise.random() * 0.16);
-    }
-
-    const shadowGrad = ctx.createRadialGradient(
-      startX,
-      startY,
-      8 + this.noise.random() * 10,
-      focusX,
-      focusY,
-      outerR
-    );
-    shadowGrad.addColorStop(0, `rgba(20, 25, 40, ${0.32 * pageIntensity})`);
-    shadowGrad.addColorStop(0.5, `rgba(40, 45, 60, ${0.12 * pageIntensity})`);
-    shadowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-
-    ctx.fillStyle = shadowGrad;
-    ctx.fillRect(0, 0, width, height);
-
-    // 1.5 Subtle secondary hand / knuckle shadow lobe
-    const thumbX = startX + (isBottomLeft ? 1 : -1) * width * (0.04 + this.noise.random() * 0.08);
-    const thumbY = startY - height * (0.06 + this.noise.random() * 0.08);
-    const thumbR = width * (0.24 + this.noise.random() * 0.10);
-    const thumbGrad = ctx.createRadialGradient(
-      thumbX,
-      thumbY,
-      6,
-      thumbX,
-      thumbY,
-      thumbR
-    );
-    thumbGrad.addColorStop(0, `rgba(25, 30, 45, ${0.14 * pageIntensity})`);
-    thumbGrad.addColorStop(0.6, `rgba(35, 40, 55, ${0.05 * pageIntensity})`);
-    thumbGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = thumbGrad;
-    ctx.fillRect(0, 0, width, height);
-
-    // 2. Warm uneven desk ambient light gradient
-    const lightAngle = (Math.PI * 0.25) + (this.noise.random() - 0.5) * 0.35;
-    const lx1 = width * 0.5 - Math.cos(lightAngle) * width * 0.55;
-    const ly1 = height * 0.5 - Math.sin(lightAngle) * height * 0.55;
-    const lx2 = width * 0.5 + Math.cos(lightAngle) * width * 0.55;
-    const ly2 = height * 0.5 + Math.sin(lightAngle) * height * 0.55;
-
-    const warmGrad = ctx.createLinearGradient(lx1, ly1, lx2, ly2);
-    warmGrad.addColorStop(0, `rgba(255, 245, 225, ${(0.07 + this.noise.random() * 0.03) * pageIntensity})`);
-    warmGrad.addColorStop(1, `rgba(180, 160, 140, ${(0.04 + this.noise.random() * 0.02) * pageIntensity})`);
-    ctx.fillStyle = warmGrad;
-    ctx.fillRect(0, 0, width, height);
-
-    // 3. Camera lens optical vignette around outer perimeter (organic center shift)
-    const vigX = width * (0.47 + this.noise.random() * 0.06);
-    const vigY = height * (0.47 + this.noise.random() * 0.06);
-    const vigR1 = width * (0.42 + this.noise.random() * 0.06);
-    const vigR2 = width * (0.80 + this.noise.random() * 0.08);
+    // Per-page camera optical center jitter (±4% from page center)
+    const vigX = width * (0.47 + (pageHashX - 0.5) * 0.08);
+    const vigY = height * (0.47 + (pageHashY - 0.5) * 0.08);
+    const vigR1 = width * (0.42 + pageHashX * 0.05);
+    const vigR2 = width * (0.80 + pageHashY * 0.08);
 
     const vignette = ctx.createRadialGradient(
       vigX,
@@ -994,12 +952,102 @@ export class InkAndScanPipeline {
       vigR2
     );
     vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
-    vignette.addColorStop(0.7, 'rgba(0, 0, 0, 0)');
-    vignette.addColorStop(1, `rgba(15, 20, 30, ${(0.13 + this.noise.random() * 0.05) * pageIntensity})`);
+    vignette.addColorStop(0.68, 'rgba(0, 0, 0, 0)');
+    vignette.addColorStop(1, `rgba(15, 20, 30, ${0.11 * intensity})`);
     ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
+  }
+
+  /**
+   * Smartphone corner shadow & warm desk lighting with per-page natural placement.
+   * Real student camera scans do NOT exhibit the exact same phone shadow on every single page;
+   * shadow only casts on ~35% of pages with varied corner position.
+   */
+  private drawSmartphoneCornerShadow(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    intensity: number,
+    pageIndex: number = 0
+  ) {
+    const pageHash = (Math.abs(Math.sin(pageIndex * 12.9898 + 78.233)) * 43758.5453) % 1.0;
+
+    // Only cast a prominent phone/hand corner shadow on ~38% of pages
+    if (pageHash >= 0.38) {
+      this.applyCameraVignette(ctx, width, height, 0.45, pageIndex);
+      return;
+    }
+
+    ctx.save();
+    const pageIntensity = intensity * (0.78 + (pageHash % 0.35) * 0.5);
+
+    // Diagonal phone cast shadow: varies corner organically across pages
+    const cornerVariant = Math.floor(pageHash * 10) % 3; // 0 = bottom-right, 1 = bottom-left, 2 = top-right
+    let startX: number;
+    let startY: number;
+    let focusX: number;
+    let focusY: number;
+    let outerR: number;
+
+    if (cornerVariant === 1) { // bottom-left
+      startX = width * (0.04 + (pageHash * 0.05));
+      startY = height * (0.91 + (pageHash * 0.06));
+      focusX = width * (0.22 + (pageHash * 0.06));
+      focusY = height * (0.72 + (pageHash * 0.06));
+      outerR = width * (0.65 + (pageHash * 0.12));
+    } else if (cornerVariant === 2) { // top-right
+      startX = width * (0.92 + (pageHash * 0.05));
+      startY = height * (0.07 + (pageHash * 0.06));
+      focusX = width * (0.74 + (pageHash * 0.06));
+      focusY = height * (0.24 + (pageHash * 0.06));
+      outerR = width * (0.62 + (pageHash * 0.12));
+    } else { // bottom-right
+      startX = width * (0.92 + (pageHash * 0.05));
+      startY = height * (0.91 + (pageHash * 0.06));
+      focusX = width * (0.72 + (pageHash * 0.06));
+      focusY = height * (0.72 + (pageHash * 0.06));
+      outerR = width * (0.65 + (pageHash * 0.12));
+    }
+
+    const shadowGrad = ctx.createRadialGradient(
+      startX,
+      startY,
+      8 + this.noise.random() * 10,
+      focusX,
+      focusY,
+      outerR
+    );
+    shadowGrad.addColorStop(0, `rgba(20, 25, 40, ${0.30 * pageIntensity})`);
+    shadowGrad.addColorStop(0.5, `rgba(40, 45, 60, ${0.11 * pageIntensity})`);
+    shadowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+    ctx.fillStyle = shadowGrad;
+    ctx.fillRect(0, 0, width, height);
+
+    // 1.5 Subtle secondary hand / knuckle shadow lobe
+    const isLeftLobe = cornerVariant === 1;
+    const thumbX = startX + (isLeftLobe ? 1 : -1) * width * (0.04 + this.noise.random() * 0.08);
+    const thumbY = startY + (cornerVariant === 2 ? 1 : -1) * height * (0.06 + this.noise.random() * 0.08);
+    const thumbR = width * (0.24 + this.noise.random() * 0.10);
+    const thumbGrad = ctx.createRadialGradient(
+      thumbX,
+      thumbY,
+      6,
+      thumbX,
+      thumbY,
+      thumbR
+    );
+    thumbGrad.addColorStop(0, `rgba(25, 30, 45, ${0.13 * pageIntensity})`);
+    thumbGrad.addColorStop(0.6, `rgba(35, 40, 55, ${0.04 * pageIntensity})`);
+    thumbGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = thumbGrad;
     ctx.fillRect(0, 0, width, height);
 
     ctx.restore();
+
+    // 2. Camera lens optical vignette around outer perimeter (organic center shift)
+    this.applyCameraVignette(ctx, width, height, 0.45, pageIndex);
   }
 
   /**
@@ -1013,7 +1061,8 @@ export class InkAndScanPipeline {
     width: number,
     height: number,
     filter: ScanFilter,
-    paperWarmth: number = 0
+    paperWarmth: number = 0,
+    pageIndex: number = 0
   ) {
     const imgData = ctx.getImageData(0, 0, width, height);
     const d = imgData.data;
@@ -1021,9 +1070,13 @@ export class InkAndScanPipeline {
     const litLimitX = width * 0.45;
     const litLimitY = height * 0.45;
 
-    const targetR = Math.min(255, Math.max(0, 252 - Math.round(paperWarmth * 6)));
-    const targetG = Math.min(255, Math.max(0, 252 - Math.round(paperWarmth * 16)));
-    const targetB = Math.min(255, Math.max(0, 253 - Math.round(paperWarmth * 42)));
+    const pageJitterR = Math.sin(pageIndex * 3.7 + 1.2) * 2.2;
+    const pageJitterG = Math.sin(pageIndex * 2.9 + 2.5) * 2.0;
+    const pageJitterB = Math.cos(pageIndex * 4.1 + 0.8) * 2.6;
+
+    const targetR = Math.min(255, Math.max(0, Math.round(252 - paperWarmth * 6 + pageJitterR)));
+    const targetG = Math.min(255, Math.max(0, Math.round(252 - paperWarmth * 16 + pageJitterG)));
+    const targetB = Math.min(255, Math.max(0, Math.round(253 - paperWarmth * 42 + pageJitterB)));
 
     if (filter === 'camscanner') {
       for (let y = 0; y < height; y++) {

@@ -2087,8 +2087,8 @@ export class MathRenderer {
   ): number {
     const scale = fontSize / 28;
     const style = this.getNextAllograph('bracket_' + (isOpen ? 'open' : 'close'), 3);
-    const height = bottomY - topY;
-    const capW = (7.5 + (this.noise.random() - 0.5) * 2.0) * scale;
+    const height = Math.max(16, bottomY - topY);
+    const capW = (7.0 + (this.noise.random() - 0.5) * 1.8) * scale;
     const dir = isOpen ? 1 : -1;
     const startX = isOpen ? x + capW : x;
     const stemX = isOpen ? x + 1.2 * scale : x + capW - 1.2 * scale;
@@ -2102,36 +2102,81 @@ export class MathRenderer {
     ctx.lineJoin = 'round';
     ctx.globalAlpha = 0.92;
 
+    const cornerRadius = Math.min(4.5 * scale, height * 0.12);
+    const stemBow = (dir * (0.8 + this.noise.random() * 1.4)) * scale;
+    const tiltOffset = (this.noise.random() - 0.5) * 1.6 * scale;
+
     ctx.beginPath();
     if (style === 1) {
-      // Rapid slanted bracket
-      const slantX = (isOpen ? -0.8 : 0.8) * scale;
-      ctx.moveTo(startX, topY + (this.noise.random() - 0.5) * 1.0 * scale);
-      ctx.lineTo(stemX, topY);
-      ctx.lineTo(stemX + slantX, bottomY);
-      ctx.lineTo(endX + dir * 1.5 * scale, bottomY + (this.noise.random() - 0.5) * 1.0 * scale);
-    } else if (style === 2) {
-      // Soft rounded student bracket
-      ctx.moveTo(startX, topY + 1.0 * scale);
-      ctx.quadraticCurveTo(stemX + dir * 2.0 * scale, topY - 1.0 * scale, stemX, topY + 5 * scale);
-      ctx.lineTo(stemX, bottomY - 5 * scale);
-      ctx.quadraticCurveTo(stemX + dir * 2.0 * scale, bottomY + 1.0 * scale, endX, bottomY);
-    } else {
-      // Organic hand bracket with entry dip and human overshoot
-      ctx.moveTo(startX, topY + (this.noise.random() - 0.5) * 1.5 * scale);
+      // Style 1: Rapid student bracket with slanted dynamic stem and decisive flick
+      ctx.moveTo(startX, topY + (this.noise.random() - 0.5) * 1.2 * scale);
       ctx.quadraticCurveTo(
-        stemX + dir * 1.5 * scale, topY - 0.5 * scale,
-        stemX, topY + 4 * scale
+        stemX + dir * 1.5 * scale,
+        topY,
+        stemX + tiltOffset,
+        topY + cornerRadius
       );
       ctx.bezierCurveTo(
-        stemX - dir * 1.2 * scale, topY + height * 0.35,
-        stemX - dir * 0.8 * scale, bottomY - height * 0.35,
-        stemX, bottomY - 4 * scale
+        stemX + tiltOffset + stemBow,
+        topY + height * 0.35,
+        stemX + stemBow * 0.8,
+        bottomY - height * 0.35,
+        stemX,
+        bottomY - cornerRadius
       );
-      const overshoot = (1.8 + this.noise.random() * 2.5) * scale;
       ctx.quadraticCurveTo(
-        stemX + dir * 1.5 * scale, bottomY + 0.5 * scale,
-        endX + dir * overshoot, bottomY + (this.noise.random() - 0.5) * 1.5 * scale
+        stemX + dir * 1.2 * scale,
+        bottomY,
+        endX + dir * (1.2 + this.noise.random() * 1.8) * scale,
+        bottomY + (this.noise.random() - 0.45) * 1.5 * scale
+      );
+    } else if (style === 2) {
+      // Style 2: Soft rounded student bracket with generous continuous turnaround
+      ctx.moveTo(startX, topY + 0.8 * scale);
+      ctx.quadraticCurveTo(
+        stemX + dir * cornerRadius * 1.2,
+        topY - 0.5 * scale,
+        stemX,
+        topY + cornerRadius * 1.4
+      );
+      ctx.bezierCurveTo(
+        stemX - dir * 0.6 * scale,
+        topY + height * 0.4,
+        stemX - dir * 0.4 * scale,
+        bottomY - height * 0.4,
+        stemX,
+        bottomY - cornerRadius * 1.4
+      );
+      ctx.quadraticCurveTo(
+        stemX + dir * cornerRadius * 1.2,
+        bottomY + 0.6 * scale,
+        endX,
+        bottomY
+      );
+    } else {
+      // Style 0: Organic hand bracket with entry touch-down hook and natural terminal overshoot
+      const topDip = (this.noise.random() - 0.5) * 1.2 * scale;
+      ctx.moveTo(startX, topY + topDip);
+      ctx.quadraticCurveTo(
+        stemX + dir * 2.0 * scale,
+        topY - 0.4 * scale,
+        stemX,
+        topY + cornerRadius
+      );
+      ctx.bezierCurveTo(
+        stemX + stemBow,
+        topY + height * 0.32,
+        stemX + stemBow * 0.7,
+        bottomY - height * 0.32,
+        stemX,
+        bottomY - cornerRadius
+      );
+      const overshoot = (1.5 + this.noise.random() * 2.4) * scale;
+      ctx.quadraticCurveTo(
+        stemX + dir * 1.8 * scale,
+        bottomY + 0.4 * scale,
+        endX + dir * overshoot,
+        bottomY + (this.noise.random() - 0.5) * 1.4 * scale
       );
     }
     ctx.stroke();
@@ -2339,7 +2384,7 @@ export class MathRenderer {
   }
 
   /**
-   * Procedural Hand Bullet (-) or scrawled tiny hollow loop (instead of typographical •)
+   * Procedural Authentic Student Hand Bullet (organic ink jab, hollow ring, or checkmark tick - never a raw markdown hyphen)
    */
   public drawHandBullet(
     ctx: CanvasRenderingContext2D,
@@ -2353,29 +2398,40 @@ export class MathRenderer {
     ctx.save();
     ctx.strokeStyle = inkColor;
     ctx.fillStyle = inkColor;
-    ctx.lineWidth = Math.max(1.2, 1.6 * scale);
+    ctx.lineWidth = Math.max(1.2, 1.5 * scale);
     ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
 
-    const centerY = y - fontSize * 0.32;
+    const centerY = y - fontSize * 0.30 + (this.noise.random() - 0.5) * 1.0 * scale;
 
-    if (roll < 0.70) {
-      // 70% Hand-sketched horizontal bullet dash (-)
-      const dashLen = (9.0 + this.noise.random() * 4.0) * scale;
-      const wobble = (this.noise.random() - 0.5) * 1.2 * scale;
+    if (roll < 0.65) {
+      // 65% Solid organic student pen jab / dot (authentic ink pool)
+      const r = (2.2 + this.noise.random() * 0.9) * scale;
+      const dotX = x + 4 * scale;
       ctx.beginPath();
-      ctx.moveTo(x + 2 * scale, centerY + wobble);
-      ctx.lineTo(x + 2 * scale + dashLen, centerY - wobble);
-      ctx.stroke();
-      ctx.restore();
-      return dashLen + 8 * scale;
-    } else {
-      // 30% Solid organic student pen tap/dot (not a hollow typographical circle)
-      const r = (1.8 + this.noise.random() * 0.8) * scale;
-      ctx.beginPath();
-      ctx.arc(x + 4 * scale, centerY, r, 0, Math.PI * 2);
+      ctx.arc(dotX, centerY, r, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
-      return r * 2 + 8 * scale;
+      return r * 2 + 10 * scale;
+    } else if (roll < 0.85) {
+      // 20% Small hand-sketched hollow ring / circle (o)
+      const r = (2.4 + this.noise.random() * 0.7) * scale;
+      const ringX = x + 4 * scale;
+      ctx.beginPath();
+      ctx.arc(ringX, centerY, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+      return r * 2 + 10 * scale;
+    } else {
+      // 15% Quick student checkmark / bullet tick
+      const tickStartX = x + 2 * scale;
+      ctx.beginPath();
+      ctx.moveTo(tickStartX, centerY - 1 * scale);
+      ctx.lineTo(tickStartX + 2.5 * scale, centerY + 2.5 * scale);
+      ctx.lineTo(tickStartX + 7.0 * scale, centerY - 3.5 * scale);
+      ctx.stroke();
+      ctx.restore();
+      return 12 * scale;
     }
   }
 
@@ -2623,40 +2679,25 @@ export class MathRenderer {
     const endX = x + width;
     const totalLen = width;
 
-    const baseLineWidth = this.getBaseLineWidth(scale, 1.0);
-    const steps = 14;
+    const baseLineWidth = this.getBaseLineWidth(scale, 1.05);
 
     ctx.save();
     ctx.strokeStyle = inkColor;
+    ctx.lineWidth = baseLineWidth;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.shadowColor = inkColor;
-    ctx.shadowBlur = 0.35;
+    ctx.globalAlpha = 0.94;
 
-    let prevX = startX;
-    let prevY = startY;
+    const midX = startX + totalLen * 0.5;
+    const sagY = (style === 1 ? 0.45 : 0.85) * scale;
+    const midY = (startY + endY) * 0.5 + sagY + (this.noise.random() - 0.5) * 0.4 * scale;
+    const flickX = endX + (style === 2 ? 1.5 : 0.5) * scale;
+    const flickY = endY + (style === 2 ? -0.5 : 0.3) * scale;
 
-    for (let i = 1; i <= steps; i++) {
-      const t = i / steps;
-      const curX = startX + totalLen * t;
-      // Controlled, gentle wrist sag: maximum 0.85px in mid-span
-      const sagY = Math.sin(Math.PI * t) * (style === 1 ? 0.45 : 0.85) * scale;
-      const tremor = (this.noise.random() - 0.5) * 0.45 * scale;
-      const curY = startY + (endY - startY) * t + sagY + tremor;
-
-      // Subtle speed factor: slightly lighter in the fast middle sweep
-      const speedFactor = 1.0 - Math.sin(Math.PI * t) * 0.18;
-      ctx.lineWidth = baseLineWidth * speedFactor;
-      ctx.globalAlpha = 0.92 - Math.sin(Math.PI * t) * 0.10;
-
-      ctx.beginPath();
-      ctx.moveTo(prevX, prevY);
-      ctx.lineTo(curX, curY);
-      ctx.stroke();
-
-      prevX = curX;
-      prevY = curY;
-    }
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.quadraticCurveTo(midX, midY, flickX, flickY);
+    ctx.stroke();
     ctx.restore();
   }
 

@@ -48,10 +48,12 @@ export function morphContourNormals(
   commands: opentype.PathCommand[],
   noise: SeededNoise,
   charSeed: number,
-  intensity: number
+  intensity: number,
+  pixelScale: number = 1.0
 ): opentype.PathCommand[] {
   const result: opentype.PathCommand[] = [];
   let contourStart: { x: number; y: number } | null = null;
+  const scaledScale = Math.min(1.0, Math.max(0.25, pixelScale));
   
   for (let i = 0; i < commands.length; i++) {
     const cmd = commands[i];
@@ -101,8 +103,8 @@ export function morphContourNormals(
     
     // Unique noise value per vertex based on position and character instance
     const n = noise.get2D(cmd.x * 0.08 + charSeed, cmd.y * 0.08 + charSeed);
-    // Displace outward or inward: -1.2px to +1.2px
-    const displacement = n * intensity * 1.5;
+    // Displace outward or inward scaled proportionally to font size
+    const displacement = n * intensity * 1.5 * scaledScale;
     
     if (cmd.type === 'L') {
       result.push({
@@ -428,7 +430,8 @@ export class GlyphMutator {
     // Transform coordinate helper with Dual-Frequency Deformation & Inner Loop Pinching
     let currentContour = 0;
     const pixelScale = (fontSize || 28) / 28;
-    const charSeedOffset = (charIndexInWord * 17.3) + (wordLength * 5.1);
+    const spatialSeed = ((Math.floor(x * 7.3) ^ Math.floor(y * 13.7)) & 0xffff) * 0.01;
+    const charSeedOffset = (charIndexInWord * 17.3) + (wordLength * 5.1) + spatialSeed;
     const ENCLOSED_CHARS = new Set(['e', 'a', 'o', 'd', 'g', 'p', 'b', 'q', '6', '8', '9', '0']);
 
     // Precalculate contour shifts and pinches once per glyph so transformPoint NEVER calls random() inside vertex loops!
@@ -770,7 +773,8 @@ export class GlyphMutator {
       commands,
       this.noise,
       charSeedOffset + char.charCodeAt(0) * 11.3,
-      handwriting.antiDuplication ? 1.0 : 0.65
+      handwriting.antiDuplication ? 1.0 : 0.65,
+      pixelScale
     );
 
     // Collect sharp turnaround vertices for microscopic ballpoint ink pooling

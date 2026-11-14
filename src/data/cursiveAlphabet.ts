@@ -1053,17 +1053,29 @@ export const RUSHED_MEDICAL_LOWERCASE: Record<string, CursiveGlyphDef> = {
     char: 'a', advance: 0.88, entryJoin: 'baseline', exitJoin: 'baseline',
     entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.86, y: -0.12 },
     primaryStrokes: [[
-      { x: 0.04, y: -0.10 }, { x: 0.62, y: -0.84 }, { x: 0.28, y: -0.88 },
-      { x: 0.10, y: -0.38 }, { x: 0.38, y: 0.00 }, { x: 0.66, y: -0.78 },
-      { x: 0.68, y: -0.04 }, { x: 0.86, y: -0.12 }
+      { x: 0.04, y: -0.10 }, { x: 0.58, y: -0.84 }, { x: 0.28, y: -0.88 },
+      { x: 0.12, y: -0.36 }, { x: 0.38, y: -0.06 }, { x: 0.66, y: -0.78 },
+      { x: 0.68, y: -0.06 }, { x: 0.86, y: -0.12 }
     ]],
+    altPrimaryStrokes: [
+      [
+        { x: 0.04, y: -0.10 }, { x: 0.52, y: -0.88 }, { x: 0.24, y: -0.86 },
+        { x: 0.14, y: -0.42 }, { x: 0.40, y: -0.07 }, { x: 0.64, y: -0.82 },
+        { x: 0.66, y: -0.06 }, { x: 0.86, y: -0.12 }
+      ],
+      [
+        { x: 0.04, y: -0.10 }, { x: 0.64, y: -0.82 }, { x: 0.32, y: -0.90 },
+        { x: 0.16, y: -0.38 }, { x: 0.36, y: -0.06 }, { x: 0.62, y: -0.76 },
+        { x: 0.64, y: -0.06 }, { x: 0.84, y: -0.12 }
+      ]
+    ],
   },
   b: {
     char: 'b', advance: 0.82, entryJoin: 'baseline', exitJoin: 'high',
     entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.80, y: -0.68 },
     primaryStrokes: [[
       { x: 0.04, y: -0.10 }, { x: 0.36, y: -1.42 }, { x: 0.22, y: -1.28 },
-      { x: 0.20, y: -0.04 }, { x: 0.44, y: 0.02 }, { x: 0.70, y: -0.44 },
+      { x: 0.20, y: -0.06 }, { x: 0.44, y: -0.02 }, { x: 0.70, y: -0.44 },
       { x: 0.56, y: -0.78 }, { x: 0.80, y: -0.68 }
     ]],
   },
@@ -1072,25 +1084,44 @@ export const RUSHED_MEDICAL_LOWERCASE: Record<string, CursiveGlyphDef> = {
     entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.70, y: -0.12 },
     primaryStrokes: [[
       { x: 0.04, y: -0.10 }, { x: 0.56, y: -0.82 }, { x: 0.26, y: -0.86 },
-      { x: 0.12, y: -0.34 }, { x: 0.42, y: 0.00 }, { x: 0.70, y: -0.12 }
+      { x: 0.12, y: -0.34 }, { x: 0.42, y: -0.06 }, { x: 0.70, y: -0.12 }
     ]],
+    altPrimaryStrokes: [
+      [
+        { x: 0.04, y: -0.10 }, { x: 0.50, y: -0.86 }, { x: 0.22, y: -0.88 },
+        { x: 0.14, y: -0.38 }, { x: 0.44, y: -0.06 }, { x: 0.72, y: -0.12 }
+      ]
+    ],
   },
   d: {
     char: 'd', advance: 0.88, entryJoin: 'baseline', exitJoin: 'baseline',
     entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.86, y: -0.12 },
     primaryStrokes: [[
       { x: 0.04, y: -0.10 }, { x: 0.60, y: -0.82 }, { x: 0.26, y: -0.88 },
-      { x: 0.12, y: -0.36 }, { x: 0.38, y: 0.00 }, { x: 0.68, y: -1.44 },
-      { x: 0.68, y: -0.04 }, { x: 0.86, y: -0.12 }
+      { x: 0.12, y: -0.36 }, { x: 0.38, y: -0.06 }, { x: 0.68, y: -1.44 },
+      { x: 0.68, y: -0.06 }, { x: 0.86, y: -0.12 }
     ]],
+    altPrimaryStrokes: [
+      [
+        { x: 0.04, y: -0.10 }, { x: 0.54, y: -0.86 }, { x: 0.22, y: -0.86 },
+        { x: 0.14, y: -0.40 }, { x: 0.40, y: -0.06 }, { x: 0.66, y: -1.40 },
+        { x: 0.66, y: -0.06 }, { x: 0.86, y: -0.12 }
+      ]
+    ],
   },
   e: {
     char: 'e', advance: 0.68, entryJoin: 'baseline', exitJoin: 'baseline',
     entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.66, y: -0.12 },
     primaryStrokes: [[
       { x: 0.04, y: -0.10 }, { x: 0.50, y: -0.66 }, { x: 0.30, y: -0.84 },
-      { x: 0.14, y: -0.36 }, { x: 0.40, y: 0.00 }, { x: 0.66, y: -0.12 }
+      { x: 0.14, y: -0.36 }, { x: 0.40, y: -0.06 }, { x: 0.66, y: -0.12 }
     ]],
+    altPrimaryStrokes: [
+      [
+        { x: 0.04, y: -0.10 }, { x: 0.46, y: -0.72 }, { x: 0.26, y: -0.86 },
+        { x: 0.16, y: -0.40 }, { x: 0.42, y: -0.06 }, { x: 0.68, y: -0.12 }
+      ]
+    ],
   },
   f: {
     char: 'f', advance: 0.70, entryJoin: 'baseline', exitJoin: 'baseline',
@@ -1204,8 +1235,14 @@ export const RUSHED_MEDICAL_LOWERCASE: Record<string, CursiveGlyphDef> = {
     entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.62, y: -0.12 },
     primaryStrokes: [[
       { x: 0.04, y: -0.10 }, { x: 0.26, y: -0.86 }, { x: 0.46, y: -0.74 },
-      { x: 0.48, y: -0.04 }, { x: 0.62, y: -0.12 }
+      { x: 0.48, y: -0.06 }, { x: 0.62, y: -0.12 }
     ]],
+    altPrimaryStrokes: [
+      [
+        { x: 0.04, y: -0.10 }, { x: 0.22, y: -0.92 }, { x: 0.40, y: -0.80 },
+        { x: 0.44, y: -0.06 }, { x: 0.62, y: -0.12 }
+      ]
+    ],
   },
   s: {
     // Flattened rapid wave 's'
@@ -1213,24 +1250,41 @@ export const RUSHED_MEDICAL_LOWERCASE: Record<string, CursiveGlyphDef> = {
     entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.64, y: -0.12 },
     primaryStrokes: [[
       { x: 0.04, y: -0.10 }, { x: 0.38, y: -0.86 }, { x: 0.54, y: -0.30 },
-      { x: 0.22, y: 0.00 }, { x: 0.64, y: -0.12 }
+      { x: 0.22, y: -0.06 }, { x: 0.64, y: -0.12 }
     ]],
+    altPrimaryStrokes: [
+      [
+        { x: 0.04, y: -0.10 }, { x: 0.34, y: -0.88 }, { x: 0.50, y: -0.34 },
+        { x: 0.26, y: -0.06 }, { x: 0.66, y: -0.12 }
+      ]
+    ],
   },
   t: {
     char: 't', advance: 0.56, entryJoin: 'baseline', exitJoin: 'baseline',
     entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.54, y: -0.12 },
     primaryStrokes: [[
-      { x: 0.04, y: -0.10 }, { x: 0.28, y: -1.26 }, { x: 0.32, y: -0.04 }, { x: 0.54, y: -0.12 }
+      { x: 0.04, y: -0.10 }, { x: 0.28, y: -1.26 }, { x: 0.32, y: -0.06 }, { x: 0.54, y: -0.12 }
     ]],
+    altPrimaryStrokes: [
+      [
+        { x: 0.04, y: -0.10 }, { x: 0.26, y: -1.20 }, { x: 0.30, y: -0.06 }, { x: 0.52, y: -0.12 }
+      ]
+    ],
     delayedStrokes: [[{ x: 0.08, y: -0.92 }, { x: 0.58, y: -0.98 }]],
   },
   u: {
     char: 'u', advance: 0.86, entryJoin: 'baseline', exitJoin: 'baseline',
     entryPoint: { x: 0.04, y: -0.10 }, exitPoint: { x: 0.84, y: -0.12 },
     primaryStrokes: [[
-      { x: 0.04, y: -0.10 }, { x: 0.24, y: -0.76 }, { x: 0.28, y: -0.12 },
-      { x: 0.46, y: 0.00 }, { x: 0.66, y: -0.76 }, { x: 0.70, y: -0.04 }, { x: 0.84, y: -0.12 }
+      { x: 0.04, y: -0.10 }, { x: 0.24, y: -0.76 }, { x: 0.36, y: -0.06 },
+      { x: 0.60, y: -0.76 }, { x: 0.66, y: -0.06 }, { x: 0.84, y: -0.12 }
     ]],
+    altPrimaryStrokes: [
+      [
+        { x: 0.04, y: -0.10 }, { x: 0.22, y: -0.80 }, { x: 0.38, y: -0.06 },
+        { x: 0.58, y: -0.78 }, { x: 0.64, y: -0.06 }, { x: 0.84, y: -0.12 }
+      ]
+    ],
   },
   v: {
     char: 'v', advance: 0.74, entryJoin: 'baseline', exitJoin: 'high',
