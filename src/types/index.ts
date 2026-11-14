@@ -104,6 +104,7 @@ export interface PaperScanSettings {
   showPaperTexture: boolean;
   showMarginGuides: boolean;
   roughWorkColumn: boolean; // Right-margin rough calculation column with divider
+  rightMarginLine?: boolean; // Right-margin hand-drawn student divider line (randomized per page)
   spiralHoles?: boolean; // Spiral notebook punch holes on margin
   studentName: string;
   assignmentTitle: string;

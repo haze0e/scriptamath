@@ -249,10 +249,7 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
         dateStr: structured.dateStr || prev.paper.dateStr,
         marginAnnotation: structured.marginNote || '',
         roughWorkColumn: structured.roughWork.length > 0,
-        customRoughWork:
-          structured.roughWork.length > 0
-            ? structured.roughWork
-            : ['14 · 6 = 84', '84 - 23 = 61', '√61 ≈ 7.81'],
+        customRoughWork: structured.roughWork || [],
       },
     }));
   };

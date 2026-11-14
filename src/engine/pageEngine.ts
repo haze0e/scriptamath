@@ -473,7 +473,34 @@ export class PageEngine {
     const bodyInkColor = pen.bodyColorHex;
     const headingInkColor = pen.headingColorHex;
 
-    this.currentRightMargin = paper.roughWorkColumn ? PAGE_WIDTH - 190 : RIGHT_MARGIN;
+    // Authentic hand-drawn right margin divider line (per-page randomized human variance)
+    const hasRightMargin = Boolean(paper.roughWorkColumn || paper.rightMarginLine);
+    let rightMarginLineTopX = PAGE_WIDTH - 165;
+    let rightMarginLineBotX = PAGE_WIDTH - 165;
+    let rightMarginTopY = TOP_MARGIN - 20;
+    let rightMarginBotY = PAGE_HEIGHT - BOTTOM_MARGIN + 10;
+
+    if (hasRightMargin) {
+      // 1. Organic per-page lateral position drift (students align ruler by eye, ±16px drift across sheets)
+      const pageMarginWidth = 168 + (this.noise.random() - 0.5) * 32;
+
+      // 2. Organic per-page angular tilt / ruler slant (differing by ±8px to ±14px from top to bottom, ~0.5° to 0.9°)
+      const tiltTop = (this.noise.random() - 0.5) * 14;
+      const tiltBot = (this.noise.random() - 0.5) * 16;
+      rightMarginLineTopX = PAGE_WIDTH - pageMarginWidth + tiltTop;
+      rightMarginLineBotX = PAGE_WIDTH - pageMarginWidth + tiltBot;
+
+      // 3. Organic per-page vertical start and end variation (students don't start/stop at identical pixels)
+      rightMarginTopY = TOP_MARGIN - 22 + (this.noise.random() - 0.5) * 28;
+      rightMarginBotY = PAGE_HEIGHT - BOTTOM_MARGIN + 12 + (this.noise.random() - 0.5) * 35;
+
+      // 4. Adapt text wrapping boundary to this page's actual drawn line
+      const leftmostDividerX = Math.min(rightMarginLineTopX, rightMarginLineBotX);
+      this.currentRightMargin = leftmostDividerX - 22;
+    } else {
+      this.currentRightMargin = RIGHT_MARGIN;
+    }
+
     this.currentLineObstacles = [];
     this.prevLineObstacles = [];
 
@@ -497,22 +524,60 @@ export class PageEngine {
       textCtx.restore();
     }
 
-    // Dynamic Right-Margin Rough Calculation Column
-    if (paper.roughWorkColumn) {
+    // Dynamic Right-Margin Hand Divider Line & Rough Work Column
+    if (hasRightMargin) {
       const isPencil = paper.roughWorkInstrument === 'pencil';
-      const scratchColor = isPencil ? '#525864' : bodyInkColor;
-      const rX = PAGE_WIDTH - 165;
+      const scratchColor = isPencil ? '#4a505c' : bodyInkColor;
+      const wobble = 1.6 + this.noise.random() * 1.2;
+      const lineWidth = isPencil ? 0.90 + this.noise.random() * 0.20 : 1.10 + this.noise.random() * 0.30;
+
+      textCtx.save();
+      if (isPencil) {
+        textCtx.globalAlpha = 0.82 + this.noise.random() * 0.10;
+      }
+
+      // Draw primary hand-drawn margin divider line
       this.mathRenderer.drawHandLine(
         textCtx,
-        rX,
-        TOP_MARGIN - 20,
-        rX + (this.noise.random() - 0.5) * 6,
-        PAGE_HEIGHT - BOTTOM_MARGIN + 10,
-        isPencil ? 0.95 : 1.1,
+        rightMarginLineTopX,
+        rightMarginTopY,
+        rightMarginLineBotX,
+        rightMarginBotY,
+        lineWidth,
         scratchColor,
-        2.2,
-        8
+        wobble,
+        6 + this.noise.random() * 4
       );
+
+      // With ~18% probability, authentic double margin line (two close parallel lines ~4-6px apart)
+      if (this.noise.random() < 0.18) {
+        const doubleGap = 4.5 + this.noise.random() * 2.0;
+        this.mathRenderer.drawHandLine(
+          textCtx,
+          rightMarginLineTopX + doubleGap,
+          rightMarginTopY + (this.noise.random() - 0.5) * 8,
+          rightMarginLineBotX + doubleGap,
+          rightMarginBotY + (this.noise.random() - 0.5) * 10,
+          lineWidth * 0.82,
+          scratchColor,
+          wobble * 0.9,
+          4
+        );
+      }
+
+      // With ~35% probability, subtle student pen lift-off / deceleration flick at bottom
+      if (this.noise.random() < 0.35) {
+        const hookX = (this.noise.random() - 0.45) * 8;
+        const hookY = 4 + this.noise.random() * 8;
+        textCtx.beginPath();
+        textCtx.moveTo(rightMarginLineBotX, rightMarginBotY);
+        textCtx.lineTo(rightMarginLineBotX + hookX, rightMarginBotY + hookY);
+        textCtx.strokeStyle = scratchColor;
+        textCtx.lineWidth = lineWidth * 0.75;
+        textCtx.stroke();
+      }
+
+      textCtx.restore();
 
       // Extract question numbers present on this page (including carry-over from pageData.questionNums)
       const pageQuestionNums = new Set<number>(pageData.questionNums || []);
@@ -606,7 +671,10 @@ export class PageEngine {
 
         // Organic wrist rotation (-3.5° to +4.5°) and varied horizontal indent
         const tiltAngle = (this.noise.random() - 0.48) * 0.085;
-        const clusterX = rX + 10 + this.noise.random() * 16;
+        const lineSpanY = Math.max(1, rightMarginBotY - rightMarginTopY);
+        const lineProgressT = Math.max(0, Math.min(1, (clusterBaseY - rightMarginTopY) / lineSpanY));
+        const dividerXAtY = rightMarginLineTopX + (rightMarginLineBotX - rightMarginLineTopX) * lineProgressT;
+        const clusterX = dividerXAtY + 12 + this.noise.random() * 10;
 
         textCtx.save();
         if (isPencil) {

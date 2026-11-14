@@ -89,6 +89,7 @@ export const App: React.FC = () => {
         showPaperTexture: true, // Physical paper pulp fibers & micro-creases
         showMarginGuides: false, // No ruled lines, clean blank sheet
         roughWorkColumn: false, // Clean margins by default unless explicitly toggled on
+        rightMarginLine: false,
         spiralHoles: true, // Authentic spiral notebook punch holes & coils
         studentName: 'Chitesh (25323015)',
         assignmentTitle: initialStructured.title || initialSample.title,
