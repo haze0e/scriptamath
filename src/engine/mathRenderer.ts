@@ -2394,45 +2394,21 @@ export class MathRenderer {
     inkColor: string
   ): number {
     const scale = fontSize / 28;
-    const roll = this.noise.random();
     ctx.save();
-    ctx.strokeStyle = inkColor;
     ctx.fillStyle = inkColor;
-    ctx.lineWidth = Math.max(1.2, 1.5 * scale);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
 
     const centerY = y - fontSize * 0.30 + (this.noise.random() - 0.5) * 1.0 * scale;
+    // Consistent organic student pen jab / dot across all list items (authentic ink pool with subtle contour jitter)
+    const rx = (2.4 + (this.noise.random() - 0.5) * 0.5) * scale;
+    const ry = (2.2 + (this.noise.random() - 0.5) * 0.5) * scale;
+    const dotX = x + 4 * scale + (this.noise.random() - 0.5) * 0.8 * scale;
+    const rot = (this.noise.random() - 0.5) * 0.35;
 
-    if (roll < 0.65) {
-      // 65% Solid organic student pen jab / dot (authentic ink pool)
-      const r = (2.2 + this.noise.random() * 0.9) * scale;
-      const dotX = x + 4 * scale;
-      ctx.beginPath();
-      ctx.arc(dotX, centerY, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-      return r * 2 + 10 * scale;
-    } else if (roll < 0.85) {
-      // 20% Small hand-sketched hollow ring / circle (o)
-      const r = (2.4 + this.noise.random() * 0.7) * scale;
-      const ringX = x + 4 * scale;
-      ctx.beginPath();
-      ctx.arc(ringX, centerY, r, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-      return r * 2 + 10 * scale;
-    } else {
-      // 15% Quick student checkmark / bullet tick
-      const tickStartX = x + 2 * scale;
-      ctx.beginPath();
-      ctx.moveTo(tickStartX, centerY - 1 * scale);
-      ctx.lineTo(tickStartX + 2.5 * scale, centerY + 2.5 * scale);
-      ctx.lineTo(tickStartX + 7.0 * scale, centerY - 3.5 * scale);
-      ctx.stroke();
-      ctx.restore();
-      return 12 * scale;
-    }
+    ctx.beginPath();
+    ctx.ellipse(dotX, centerY, rx, ry, rot, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return rx * 2 + 10 * scale;
   }
 
   /**

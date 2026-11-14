@@ -106,7 +106,7 @@ function drawSmoothInkRibbon(
     if (k > 0) arcLen += Math.hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y);
 
     const dirY = ty / tLen; // +1 = downstroke, -1 = upstroke
-    const widthMod = 1.0 + dirY * 0.42 * contrast;
+    const widthMod = 1.0 + dirY * 0.68 * Math.max(0.75, contrast);
     const coldTaper = isColdStart && coldStartEnabled && arcLen < 7
       ? 0.45 + (arcLen / 7) * 0.55
       : 1.0;
@@ -285,10 +285,12 @@ export class CursiveEngine {
         let nx = pt.x * charScaleX;
         let ny = pt.y * charScaleY;
 
-        // High-join adaptation after o, v, w, b
-        if (prevDef?.exitJoin === 'high' && idxInChar < 2) {
-          const blend = idxInChar === 0 ? 0.72 : 0.35;
-          ny = ny * (1 - blend) + (-0.80) * blend;
+        // High-join adaptation after o, v, w, b:
+        // Gently raise only the initial lead-in connector (index 0) towards the high join level (~-0.55)
+        // without distorting or crushing the actual letter counter (index >= 1).
+        if (prevDef?.exitJoin === 'high' && idxInChar === 0) {
+          const targetEntryY = Math.min(pt.y, -0.55);
+          ny = ny * 0.40 + targetEntryY * 0.60;
         }
 
         // Spatial 2D loop warp noise (distinct per letter position on page)

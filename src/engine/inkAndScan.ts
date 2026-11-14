@@ -224,8 +224,9 @@ export class InkAndScanPipeline {
     pageIndex: number,
     paper: PaperScanSettings
   ) {
-    const leftMarginX1 = 150;
-    const leftMarginX2 = 156;
+    const pageMarginDrift = (Math.sin((pageIndex + 1) * 7.13 + 1.2) * 4.2) + (Math.cos((pageIndex + 1) * 4.31) * 2.8);
+    const leftMarginX1 = 150 + pageMarginDrift;
+    const leftMarginX2 = 156 + pageMarginDrift;
 
     // 1. Horizontal ruling lines (College Blue)
     ctx.strokeStyle = '#adc9e8'; // Clean notebook blue

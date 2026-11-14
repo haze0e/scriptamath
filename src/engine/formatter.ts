@@ -637,8 +637,8 @@ export function parseRawAIOutput(rawText: string): DocumentBlock[] {
       continue;
     }
 
-    // Horizontal Separator Rule (---, ***, ___, —, –––)
-    if (line.match(/^([-*_—–\s]{3,}|[—–]+)$/)) {
+    // Horizontal Separator Rule (---, --, ***, ___, —, –––, - -)
+    if (line.match(/^([-*_—–\s]{2,}|[—–]+)$/)) {
       blocks.push({
         id: `blk-${++blockIdCounter}`,
         type: 'separator',

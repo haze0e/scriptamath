@@ -845,8 +845,10 @@ export class PageEngine {
           ? 14 + this.noise.random() * 18
           : 0;
 
+      const pageMarginDrift =
+        (Math.sin(pageData.pageNumber * 7.13 + 1.2) * 4.2) + (Math.cos(pageData.pageNumber * 4.31) * 2.8);
       const rawMarginX =
-        LEFT_MARGIN + wander + block.indent * 28 + (block.type === 'math-step' ? derivationDriftX + equationIndent : 0);
+        LEFT_MARGIN + pageMarginDrift + wander + block.indent * 28 + (block.type === 'math-step' ? derivationDriftX + equationIndent : 0);
       const baseMarginX = Math.max(145, rawMarginX);
 
       // Top clearance: If the block contains tall elements (boxed answers, fractions, roots, cases),
@@ -1494,21 +1496,63 @@ export class PageEngine {
       }
     }
 
-    // Case 3: Base with following script or subscript: e.g. W_{s}, M_T
+    // Case 4: Base with following script or subscript: e.g. W_{s}, M_T, c_{-1}
     if (startIndex + 1 < tokens.length && tokens[startIndex + 1].type === 'script') {
       const w1 = this.estimateTokenWidth(font, first, fontSize);
       const w2 = this.estimateTokenWidth(font, tokens[startIndex + 1], fontSize);
       return { width: w1 + w2, count: 2 };
     }
 
-    // Case 4: Token preceding an immediate closing delimiter: never leave closing delimiter alone on next line!
-    if (startIndex + 1 < tokens.length && tokens[startIndex + 1].type === 'delimiter') {
-      const nextChar = (tokens[startIndex + 1] as MathDelimiter).char;
+    // Case 5: Token preceding closing delimiter (even with intervening space):
+    // Never leave a lone closing delimiter ')' or ']' on a new line!
+    let lookAhead = startIndex + 1;
+    while (lookAhead < tokens.length && tokens[lookAhead].type === 'space') {
+      lookAhead++;
+    }
+    if (lookAhead < tokens.length && tokens[lookAhead].type === 'delimiter') {
+      const nextChar = (tokens[lookAhead] as MathDelimiter).char;
       if (nextChar === ')' || nextChar === ']' || nextChar === '}') {
-        const w1 = this.estimateTokenWidth(font, first, fontSize);
-        const w2 = this.estimateTokenWidth(font, tokens[startIndex + 1], fontSize);
-        return { width: w1 + w2, count: 2 };
+        let totalW = 0;
+        for (let k = startIndex; k <= lookAhead; k++) {
+          totalW += this.estimateTokenWidth(font, tokens[k], fontSize);
+        }
+        return { width: totalW, count: lookAhead - startIndex + 1 };
       }
+    }
+
+    // Case 6: Relational operator and evaluation result: e.g. '= 0.904524', '≈ 3.14159', '= 2.423159'
+    // Prevents pushing a lonely decimal answer to a new line while leaving '=' at the end of the line above.
+    const isRelational =
+      first.type === 'operator' &&
+      /^(?:=|≈|≠|≤|≥|<|>|⇒|→|≡)$/.test(first.symbol);
+
+    if (isRelational && startIndex + 1 < tokens.length) {
+      let cursor = startIndex + 1;
+      let operandTokensCount = 0;
+      let totalW = this.estimateTokenWidth(font, first, fontSize);
+
+      while (cursor < tokens.length && operandTokensCount < 4) {
+        const nextTok = tokens[cursor];
+        if (nextTok.type === 'operator' && /^(?:=|≈|≠|≤|≥|<|>|⇒|→|≡)$/.test(nextTok.symbol)) {
+          break; // Stop before next relation
+        }
+        totalW += this.estimateTokenWidth(font, nextTok, fontSize);
+        if (nextTok.type !== 'space') {
+          operandTokensCount++;
+        }
+        cursor++;
+      }
+
+      // If followed by a compact evaluation result (e.g. '= 0.904524' or '= \frac{1}{24}'),
+      // group the operator and value atomically so they wrap together onto the continuation line!
+      if (operandTokensCount > 0 && totalW < 320) {
+        return { width: totalW, count: cursor - startIndex };
+      }
+    }
+
+    // Case 7: Lone closing delimiter itself — should never trigger a wrap by itself
+    if (first.type === 'delimiter' && (first.char === ')' || first.char === ']' || first.char === '}')) {
+      return { width: 0, count: 1 };
     }
 
     return { width: this.estimateTokenWidth(font, first, fontSize), count: 1 };
@@ -1690,9 +1734,11 @@ export class PageEngine {
       const tokenWidth = this.estimateTokenWidth(font, token, fontSize);
       const atomic = this.getAtomicMathGroup(tokens, i, font, fontSize);
       const checkWidth = atomic.count > 1 ? atomic.width : tokenWidth;
+      const isClosingDelim =
+        token.type === 'delimiter' && (token.char === ')' || token.char === ']' || token.char === '}');
 
-      if (currX + checkWidth > this.currentRightMargin && currX > startX + 60) {
-        // Wrap to next line before rendering math token (preserves atomic function calls e.g. g'(u))
+      if (!isClosingDelim && currX + checkWidth > this.currentRightMargin && currX > startX + 60) {
+        // Wrap to next line before rendering math token (preserves atomic function calls e.g. g'(u) or = 0.904524)
         this.prevLineObstacles = this.currentLineObstacles;
         this.currentLineObstacles = [];
         currY += trueLineHeight;
@@ -1784,8 +1830,19 @@ export class PageEngine {
         horizonRandomWalkY += (this.noise.random() - 0.48) * (isUnruled ? 2.5 : 1.0);
       }
 
-      // Long-equation wrapping: auto-wrap onto continuation line indented by +45px (never break atomic g'(u))
-      if (currX + checkWidth > this.currentRightMargin - 20 && currX > startX + 20) {
+      const isClosingDelim =
+        token.type === 'delimiter' && (token.char === ')' || token.char === ']' || token.char === '}');
+
+      // Soft margin squeeze: if only 1-3 tokens remain and they barely overshoot margin (by < 42px),
+      // squeeze them into the margin area rather than breaking an entire new line for one trailing number!
+      const remainingTokens = tokens.length - tIdx;
+      const canSqueezeToEnd =
+        remainingTokens <= 3 &&
+        currX + checkWidth <= this.currentRightMargin + 42 &&
+        !isClosingDelim;
+
+      // Long-equation wrapping: auto-wrap onto continuation line indented by +45px (never break atomic g'(u) or = 0.904524)
+      if (!isClosingDelim && !canSqueezeToEnd && currX + checkWidth > this.currentRightMargin - 20 && currX > startX + 20) {
         this.prevLineObstacles = this.currentLineObstacles;
         this.currentLineObstacles = [];
         const lineWidth = currX - (lineCount > 1 ? startX + 45 : startX);
@@ -3749,11 +3806,18 @@ export class PageEngine {
     for (let c = 0; c < columnCount; c++) {
       const hTokens = headers[c] || [];
       const cellW = colWidths[c];
-      const tokenW = this.estimateTokensWidth(font, hTokens, headerFontSize);
-      const cellStartX = colXPositions[c] + Math.max(3, (cellW - tokenW) * 0.5);
+      const rawTokenW = this.estimateTokensWidth(font, hTokens, headerFontSize);
+      // Guarantee cell text never touches vertical divider lines by ensuring min 8px clearance
+      const maxAllowedW = Math.max(14, cellW - 9);
+      const effectiveHeaderSize = rawTokenW > maxAllowedW
+        ? headerFontSize * (maxAllowedW / Math.max(1, rawTokenW))
+        : headerFontSize;
 
-      const jitterX = (this.noise.random() - 0.5) * 2.0;
-      const jitterY = (this.noise.random() - 0.5) * 1.2;
+      const actualW = this.estimateTokensWidth(font, hTokens, effectiveHeaderSize);
+      const cellStartX = colXPositions[c] + Math.max(4, (cellW - actualW) * 0.5);
+
+      const jitterX = (this.noise.random() - 0.5) * 1.2;
+      const jitterY = (this.noise.random() - 0.5) * 1.0;
       let cx = cellStartX + jitterX;
       for (const t of hTokens) {
         cx += this.renderSingleToken(
@@ -3762,7 +3826,7 @@ export class PageEngine {
           t,
           cx,
           headerBaselineY + jitterY,
-          headerFontSize,
+          effectiveHeaderSize,
           headingInkColor,
           lineProgress,
           handwriting,
@@ -3781,11 +3845,18 @@ export class PageEngine {
         if (cTokens.length === 0) continue;
 
         const cellW = colWidths[c];
-        const tokenW = this.estimateTokensWidth(font, cTokens, cellFontSize);
-        const cellStartX = colXPositions[c] + Math.max(3, (cellW - tokenW) * 0.5);
+        const rawTokenW = this.estimateTokensWidth(font, cTokens, cellFontSize);
+        // Guarantee cell decimals and numbers never clip into column borders
+        const maxAllowedW = Math.max(14, cellW - 9);
+        const effectiveCellSize = rawTokenW > maxAllowedW
+          ? cellFontSize * (maxAllowedW / Math.max(1, rawTokenW))
+          : cellFontSize;
 
-        const jitterX = (this.noise.random() - 0.5) * 2.0;
-        const jitterY = (this.noise.random() - 0.5) * 1.2;
+        const actualW = this.estimateTokensWidth(font, cTokens, effectiveCellSize);
+        const cellStartX = colXPositions[c] + Math.max(4, (cellW - actualW) * 0.5);
+
+        const jitterX = (this.noise.random() - 0.5) * 1.2;
+        const jitterY = (this.noise.random() - 0.5) * 1.0;
         let cx = cellStartX + jitterX;
         for (const t of cTokens) {
           cx += this.renderSingleToken(
@@ -3794,7 +3865,7 @@ export class PageEngine {
             t,
             cx,
             cellBaselineY + jitterY,
-            cellFontSize,
+            effectiveCellSize,
             inkColor,
             lineProgress,
             handwriting,

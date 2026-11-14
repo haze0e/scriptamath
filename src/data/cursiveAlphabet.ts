@@ -322,12 +322,12 @@ export const CURSIVE_UPPERCASE: Record<string, CursiveGlyphDef> = {
     ]],
   },
   E: {
-    char: 'E', advance: 0.98, entryJoin: 'break', exitJoin: 'baseline',
-    entryPoint: { x: 0.30, y: -1.75 }, exitPoint: { x: 0.95, y: -0.15 },
+    char: 'E', advance: 0.96, entryJoin: 'break', exitJoin: 'baseline',
+    entryPoint: { x: 0.36, y: -1.72 }, exitPoint: { x: 0.92, y: -0.12 },
     primaryStrokes: [[
-      { x: 0.30, y: -1.75 }, { x: 0.70, y: -1.82 }, { x: 0.35, y: -1.05 },
-      { x: 0.58, y: -1.05 }, { x: 0.25, y: -0.95 }, { x: 0.22, y: -0.15 },
-      { x: 0.55, y: 0.00 }, { x: 0.95, y: -0.15 }
+      { x: 0.36, y: -1.72 }, { x: 0.72, y: -1.82 }, { x: 0.64, y: -1.25 },
+      { x: 0.40, y: -1.04 }, { x: 0.60, y: -1.02 }, { x: 0.28, y: -0.52 },
+      { x: 0.48, y: -0.06 }, { x: 0.92, y: -0.12 }
     ]],
   },
   F: {
@@ -446,18 +446,20 @@ export const CURSIVE_UPPERCASE: Record<string, CursiveGlyphDef> = {
   },
   S: {
     char: 'S', advance: 0.95, entryJoin: 'break', exitJoin: 'break',
-    entryPoint: { x: 0.20, y: -0.15 }, exitPoint: { x: 0.88, y: -0.10 },
+    entryPoint: { x: 0.18, y: -0.15 }, exitPoint: { x: 0.84, y: -0.12 },
     primaryStrokes: [[
-      { x: 0.20, y: -0.15 }, { x: 0.50, y: -1.80 }, { x: 0.75, y: -1.45 },
-      { x: 0.30, y: -0.85 }, { x: 0.72, y: -0.15 }, { x: 0.45, y: 0.00 }, { x: 0.88, y: -0.10 }
+      { x: 0.18, y: -0.15 }, { x: 0.46, y: -1.80 }, { x: 0.72, y: -1.48 },
+      { x: 0.32, y: -0.88 }, { x: 0.66, y: -0.18 }, { x: 0.42, y: -0.06 }, { x: 0.84, y: -0.12 }
     ]],
   },
   T: {
     char: 'T', advance: 1.05, entryJoin: 'break', exitJoin: 'break',
-    entryPoint: { x: 0.15, y: -1.82 }, exitPoint: { x: 0.75, y: -0.10 },
+    entryPoint: { x: 0.16, y: -1.80 }, exitPoint: { x: 0.74, y: -0.10 },
     primaryStrokes: [[
-      { x: 0.15, y: -1.82 }, { x: 0.92, y: -1.80 }, { x: 0.52, y: -1.75 },
-      { x: 0.50, y: -0.05 }, { x: 0.35, y: -0.02 }, { x: 0.75, y: -0.10 }
+      { x: 0.52, y: -1.74 }, { x: 0.50, y: -0.06 }, { x: 0.38, y: -0.02 }, { x: 0.74, y: -0.10 }
+    ]],
+    delayedStrokes: [[
+      { x: 0.16, y: -1.80 }, { x: 0.52, y: -1.84 }, { x: 0.88, y: -1.78 }
     ]],
   },
   U: {
