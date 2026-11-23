@@ -82,7 +82,7 @@ export function analyzeStrokes(strokes: RawStroke[]): BiometricAnalysisResult {
 
       // 1. Downward stroke slant analysis (dy > 3.0px)
       if (dy > 2.5) {
-        const angleRad = Math.atan2(dx, dy); // 0 = straight down, >0 = forward slant (/)
+        const angleRad = Math.atan2(-dx, dy); // 0 = straight down, >0 = forward slant (/)
         const angleDeg = (angleRad * 180) / Math.PI;
         // Exclude wild horizontal sweeps (limit to -20° to +40°)
         if (angleDeg >= -20 && angleDeg <= 40) {
@@ -251,6 +251,7 @@ export function createPersonaFromBiometrics(
       persona: personaId,
       fontFamily,
       fontSize: 27,
+      cursiveMode: 'semi-cursive',
       slantAngle: analysis.slantAngle,
       letterSpacing: analysis.letterSpacing,
       wordSpacing: analysis.wordSpacing,

@@ -49,6 +49,8 @@ const CANDIDATES: VariationCandidate[] = [
     handwritingOverrides: {
       persona: 'chitesh-stem-notes',
       fontFamily: 'ChiteshHandwriting',
+      cursiveMode: 'semi-cursive',
+      cursiveStyle: 'collegiate-flow',
       slantAngle: 5.5,
       loopWarp: 0.52,
       ligatureRate: 0.50,
@@ -82,6 +84,8 @@ const CANDIDATES: VariationCandidate[] = [
     handwritingOverrides: {
       persona: 'boy-stem-cursive',
       fontFamily: 'Caveat',
+      cursiveMode: 'vector-cursive',
+      cursiveStyle: 'rushed-stem-medical',
       slantAngle: 16.0,
       loopWarp: 0.55,
       ligatureRate: 0.75,
@@ -116,6 +120,8 @@ const CANDIDATES: VariationCandidate[] = [
     handwritingOverrides: {
       persona: 'girl-neat-cursive',
       fontFamily: 'Kalam',
+      cursiveMode: 'semi-cursive',
+      cursiveStyle: 'palmer-business',
       slantAngle: 4.0,
       loopWarp: 0.28,
       ligatureRate: 0.42,
@@ -149,6 +155,8 @@ const CANDIDATES: VariationCandidate[] = [
     handwritingOverrides: {
       persona: 'exam-prep-rushed',
       fontFamily: 'NanumPenScript',
+      cursiveMode: 'semi-cursive',
+      cursiveStyle: 'rushed-notes',
       slantAngle: 18.5,
       loopWarp: 0.62,
       ligatureRate: 0.78,
@@ -243,7 +251,12 @@ export const VariationStudioModal: React.FC<VariationStudioModalProps> = ({
               candidateState.paper.roughWorkColumn,
               candidateState.handwriting.letterSpacing,
               candidateState.handwriting.wordSpacing,
-              font
+              font,
+              candidateState.paper.template,
+              candidateState.handwriting.snapToRuledLines,
+              candidateState.handwriting.cursiveMode,
+              allographs,
+              candidateState.handwriting.cursiveStyle
             );
             const pageData = paginated[Math.min(currentPageIdx, paginated.length - 1)];
 
@@ -254,6 +267,8 @@ export const VariationStudioModal: React.FC<VariationStudioModalProps> = ({
               candidateEngine.renderPage(canvas, pageData, candidateState, font, undefined, allographs);
 
               const previewUrl = canvas.toDataURL('image/jpeg', 0.82);
+              canvas.width = 0;
+              canvas.height = 0;
               if (!isCancelledRef.current) {
                 setRenderedPreviews((prev) => ({ ...prev, [candidate.id]: previewUrl }));
               }

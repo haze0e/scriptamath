@@ -25,7 +25,7 @@ export interface MathOperator {
 
 export interface MathDelimiter {
   type: 'delimiter';
-  char: '(' | ')' | '[' | ']' | '{' | '}' | '|';
+  char: '(' | ')' | '[' | ']' | '{' | '}' | '|' | '⟨' | '⟩' | '⌊' | '⌋' | '⌈' | '⌉';
   isBig?: boolean;
 }
 
@@ -36,14 +36,15 @@ export interface MathBoxed {
 
 export interface MathBigOp {
   type: 'big-op';
-  symbol: '\\int' | '\\sum' | '\\prod' | '\\bigcup' | '\\bigcap';
+  symbol: '\\int' | '\\iint' | '\\iiint' | '\\oint' | '\\sum' | '\\prod' | '\\bigcup' | '\\bigcap';
   lower?: MathToken[];
   upper?: MathToken[];
+  forceLimits?: boolean;
 }
 
 export interface MathMatrix {
   type: 'matrix';
-  bracket: 'b' | 'p' | 'v' | 'cases';
+  bracket: 'b' | 'p' | 'v' | 'V' | 'none' | 'cases';
   cells: MathToken[][][];
 }
 
@@ -56,6 +57,7 @@ export interface MathText {
   type: 'text';
   text: string;
   isFunction?: boolean; // cos, sin, tan, ln
+  isText?: boolean;
 }
 
 export type MathToken =
@@ -372,7 +374,7 @@ function collapseBalancedMatrixNewlines(input: string): string {
   let out = '';
   let i = 0;
   while (i < input.length) {
-    const beginMatch = input.slice(i).match(/^\\begin\{(bmatrix|pmatrix|vmatrix|cases)\}/);
+    const beginMatch = input.slice(i).match(/^\\begin\{(matrix|bmatrix|pmatrix|vmatrix|Vmatrix|cases|aligned|array)\}/);
     if (beginMatch) {
       const env = beginMatch[1];
       const openTag = beginMatch[0];
@@ -421,7 +423,6 @@ export function parseRawAIOutput(rawText: string): DocumentBlock[] {
     .replace(/\r\n/g, '\n')
     .replace(/(?<!\\)\\\[([\s\S]*?)(?<!\\)\\\]/g, (_m, inner) => `$$\n${inner.trim()}\n$$`) // \[ ... \] to $$ ... $$
     .replace(/(?<!\\)\\\(([\s\S]*?)(?<!\\)\\\)/g, (_m, inner) => `$${inner}$`) // \( ... \) to $ ... $
-    .replace(/\\begin\{aligned\*?\}([\s\S]*?)\\end\{aligned\*?\}/g, '$1')
     .replace(/\$\$([\s\S]*?)\$\$/g, (_match, inner) => {
       const stripped = inner.replace(/\\begin\{align\*?\}/g, '').replace(/\\end\{align\*?\}/g, '');
       return `$$\n${stripped.trim()}\n$$`;
@@ -656,7 +657,7 @@ export function parseRawAIOutput(rawText: string): DocumentBlock[] {
 
     // Markdown Lists / Margin Items (Q1., Ans:, 1., **1.**, (a), •)
     const boldNumMatch = line.match(
-      /^(?:\*\*(?:(?:[Qq]uestion|[Pp]roblem)\s*(\d+)[:.]?|Q(\d+)[:.]?|(\d+)[\.:\)])\*\*|(?:(?:[Qq]uestion|[Pp]roblem)\s*(\d+)[:.]?|Q(\d+)[:.]?|(\d+)[\.:\)]))\s*(.*)$/
+      /^(?:\*\*(?:(?:[Qq]uestion|[Pp]roblem)\s*(\d+)[:.]?|Q(\d+)[:.]?|(\d+)[\.:\)])\*\*|(?:(?:[Qq]uestion|[Pp]roblem)\s*(\d+)[:.]?|Q(\d+)[:.]?|(\d+)[\.:\)](?:\s+|$)))\s*(.*)$/
     );
     if (boldNumMatch) {
       const qNum =
@@ -714,7 +715,7 @@ export function parseRawAIOutput(rawText: string): DocumentBlock[] {
       continue;
     }
 
-    const ansMatch = line.match(/^(?:(?:[Ss]olution|[Aa]nswer)[:.]?|Ans[:.]?)\s*(.*)$/);
+    const ansMatch = line.match(/^(?:(?:[Ss]olution|[Aa]nswer|Ans)(?:[:.]|\s*[-–—]|\s*$))\s*(.*)$/);
     if (ansMatch) {
       blocks.push({
         id: `blk-${++blockIdCounter}`,
@@ -756,24 +757,30 @@ export function parseRawAIOutput(rawText: string): DocumentBlock[] {
 
     // Alpha sub-items: e.g. (a), (b), a., a), **(a)**, **a.**, **(a) Showing ...**, **(i)**, **(b) Showing that...**
     const alphaListMatch = line.match(
-      /^(?:\*\*\s*)?(?:\(([a-zA-Z]|[ivxlcdmIVXLCDM]+)\)|([a-zA-Z]|[ivxlcdmIVXLCDM]+)[.)])(?:\s*\*\*)?\s*(.*)$/
+      /^(?:\*\*\s*)?(?:\(([a-zA-Z]+)\)|([a-zA-Z]+)[.)])(?:\s*\*\*)?(?:\s+|[:.]\s*|$)(.*)$/
     );
     if (alphaListMatch) {
       const alphaChar = alphaListMatch[1] || alphaListMatch[2];
-      let remainder = (alphaListMatch[3] || '').trim();
-      remainder = remainder.replace(/^\*\*\s*/, '').replace(/[:.]?\s*\*\*[:.]?$/, ':').trim();
-      if (remainder.endsWith('**')) {
-        remainder = remainder.slice(0, -2).trim();
+      const isSingleAlpha = /^[a-zA-Z]$/.test(alphaChar);
+      const isValidRoman = /^(?:i{1,3}|iv|v|vi{0,3}|ix|x{1,3}|I{1,3}|IV|V|VI{0,3}|IX|X{1,3})$/.test(alphaChar);
+      if (isSingleAlpha || isValidRoman) {
+        let remainder = (alphaListMatch[3] || '').trim();
+        if (!/^[\+\-\*\/\^\=\<\>]/.test(remainder)) {
+          remainder = remainder.replace(/^\*\*\s*/, '').replace(/[:.]?\s*\*\*[:.]?$/, ':').trim();
+          if (remainder.endsWith('**')) {
+            remainder = remainder.slice(0, -2).trim();
+          }
+          blocks.push({
+            id: `blk-${++blockIdCounter}`,
+            type: 'margin-item',
+            prefix: `(${alphaChar})`,
+            indent: 1,
+            tokens: tokenizeParagraphWithInlineMath(remainder),
+            rawText: line,
+          });
+          continue;
+        }
       }
-      blocks.push({
-        id: `blk-${++blockIdCounter}`,
-        type: 'margin-item',
-        prefix: `(${alphaChar})`,
-        indent: 1,
-        tokens: tokenizeParagraphWithInlineMath(remainder),
-        rawText: line,
-      });
-      continue;
     }
 
     // Bold section / case / proof headers: e.g. **Case 1 (t = 0):**, **Step 1:**, **Claim:**, **Proof:**
@@ -860,7 +867,7 @@ function protectBalancedEnvironments(mathContent: string): string {
         continue;
       }
     }
-    const beginMatch = mathContent.slice(i).match(/^\\begin\{(bmatrix|pmatrix|vmatrix|cases)\}/);
+    const beginMatch = mathContent.slice(i).match(/^\\begin\{(matrix|bmatrix|pmatrix|vmatrix|Vmatrix|cases|aligned|array)\}/);
     if (beginMatch) {
       const env = beginMatch[1];
       const openTag = beginMatch[0];
@@ -971,7 +978,7 @@ export function tokenizeParagraphWithInlineMath(text: string): MathToken[] {
   // 1. Mask math blocks ($$...$$ and $...$) so markdown regexes never touch LaTeX inside math
   const mathPlaceholders: string[] = [];
   const placeholderPrefix = '___MATH_TOKEN_';
-  const maskedText = text.replace(/(?<!\\)(\$\$[\s\S]+?\$\$|\$(?:\\.|[^\$\\])+\$)/g, (match) => {
+  const maskedText = text.replace(/(?<!\\)(\$\$[^\n\r]+?\$\$|\$(?:\\.|[^\$\\\n\r])+\$)/g, (match) => {
     const idx = mathPlaceholders.length;
     mathPlaceholders.push(match);
     return `${placeholderPrefix}${idx}___`;
@@ -1007,7 +1014,7 @@ export function tokenizeParagraphWithInlineMath(text: string): MathToken[] {
         } else if (sp.includes('\\binom') || sp.includes('\\frac') || sp.includes('\\sqrt')) {
           tokens.push(...parseLatexExpressionTokens(sp));
         } else {
-          tokens.push({ type: 'text', text: sp });
+          tokens.push({ type: 'text', text: sp, isText: true });
         }
       }
     }
@@ -1122,8 +1129,8 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
       continue;
     }
 
-    // 2. Matrix environments: \begin{bmatrix}, \begin{pmatrix}, \begin{vmatrix}, \begin{cases}
-    const matrixMatch = expr.slice(i).match(/^\\begin\{(bmatrix|pmatrix|vmatrix|cases)\}/);
+    // 2. Matrix environments: \begin{matrix}, \begin{bmatrix}, \begin{pmatrix}, \begin{vmatrix}, \begin{Vmatrix}, \begin{cases}, \begin{aligned}, \begin{array}
+    const matrixMatch = expr.slice(i).match(/^\\begin\{(matrix|bmatrix|pmatrix|vmatrix|Vmatrix|cases|aligned|array)\}/);
     if (matrixMatch) {
       const env = matrixMatch[1];
       const openTag = matrixMatch[0];
@@ -1143,9 +1150,26 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
         }
       }
       if (depth === 0) {
-        const inner = expr.slice(i + openTag.length, cursor);
-        const bracketType: 'b' | 'p' | 'v' | 'cases' =
-          env === 'bmatrix' ? 'b' : env === 'pmatrix' ? 'p' : env === 'vmatrix' ? 'v' : 'cases';
+        let innerStart = i + openTag.length;
+        if (env === 'array') {
+          const colSpec = extractBalanced(expr, innerStart);
+          if (colSpec) {
+            innerStart = colSpec.endIndex;
+          }
+        }
+        const inner = expr.slice(innerStart, cursor);
+        const bracketType: 'b' | 'p' | 'v' | 'V' | 'none' | 'cases' =
+          env === 'bmatrix'
+            ? 'b'
+            : env === 'pmatrix'
+            ? 'p'
+            : env === 'vmatrix'
+            ? 'v'
+            : env === 'Vmatrix'
+            ? 'V'
+            : env === 'cases'
+            ? 'cases'
+            : 'none';
 
         const unescapedInner = inner
           .replace(/__MATRIX_SLASH__/g, '\\\\')
@@ -1249,8 +1273,8 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
       }
     }
 
-    // 4. Fractions: \frac{num}{den}
-    if (expr.startsWith('\\frac', i)) {
+    // 4. Fractions: \frac{num}{den}, \dfrac{num}{den}, \tfrac{num}{den}
+    if (expr.startsWith('\\frac', i) || expr.startsWith('\\dfrac', i) || expr.startsWith('\\tfrac', i)) {
       const numMatch = extractBalanced(expr, i);
       if (numMatch) {
         const denMatch = extractBalanced(expr, numMatch.endIndex);
@@ -1331,6 +1355,52 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
     }
     if (expr.startsWith('\\right.', i)) {
       i += 7;
+      continue;
+    }
+
+    // Norm double vertical bars: \|, \left\|, \right\|
+    if (expr.startsWith('\\left\\|', i) || expr.startsWith('\\right\\|', i)) {
+      tokens.push({ type: 'delimiter', char: '|', isBig: true });
+      tokens.push({ type: 'delimiter', char: '|', isBig: true });
+      i += expr.startsWith('\\left\\|', i) ? 7 : 8;
+      continue;
+    }
+    if (expr.startsWith('\\|', i)) {
+      tokens.push({ type: 'delimiter', char: '|' });
+      tokens.push({ type: 'delimiter', char: '|' });
+      i += 2;
+      continue;
+    }
+
+    // Angle brackets and floor/ceil delimiters
+    if (matchesLatexMacro(expr, i, '\\langle')) {
+      tokens.push({ type: 'delimiter', char: '⟨' });
+      i += 7;
+      continue;
+    }
+    if (matchesLatexMacro(expr, i, '\\rangle')) {
+      tokens.push({ type: 'delimiter', char: '⟩' });
+      i += 7;
+      continue;
+    }
+    if (matchesLatexMacro(expr, i, '\\lfloor')) {
+      tokens.push({ type: 'delimiter', char: '⌊' });
+      i += 7;
+      continue;
+    }
+    if (matchesLatexMacro(expr, i, '\\rfloor')) {
+      tokens.push({ type: 'delimiter', char: '⌋' });
+      i += 7;
+      continue;
+    }
+    if (matchesLatexMacro(expr, i, '\\lceil')) {
+      tokens.push({ type: 'delimiter', char: '⌈' });
+      i += 6;
+      continue;
+    }
+    if (matchesLatexMacro(expr, i, '\\rceil')) {
+      tokens.push({ type: 'delimiter', char: '⌉' });
+      i += 6;
       continue;
     }
 
@@ -1452,7 +1522,14 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
             b.inner.includes('|') ||
             b.inner.includes('\\mid');
 
-          if (isAfterSetRel || hasSetPunct) {
+          const before = expr.slice(0, i).trimEnd();
+          const isPrecededByMacroOrScript =
+            before.endsWith('\\') ||
+            before.endsWith('_') ||
+            before.endsWith('^') ||
+            /\\[a-zA-Z]+$/.test(before);
+
+          if (!isPrecededByMacroOrScript && (isAfterSetRel || hasSetPunct)) {
             tokens.push({ type: 'delimiter', char: '{' });
             tokens.push(...innerTokens);
             tokens.push({ type: 'delimiter', char: '}' });
@@ -1623,15 +1700,24 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
       continue;
     }
 
-    // 11. Text blocks: \text{...}, \mathrm{...}, \mathbf{...}
+    // 11. Text blocks: \text{...}, \mathrm{...}, \mathbf{...}, \operatorname{...}
     if (
       matchesLatexMacro(expr, i, '\\text') ||
       matchesLatexMacro(expr, i, '\\mathrm') ||
       matchesLatexMacro(expr, i, '\\mathbf')
     ) {
+      const isProse = matchesLatexMacro(expr, i, '\\text');
       const b = extractBalanced(expr, i);
       if (b) {
-        tokens.push({ type: 'text', text: b.inner });
+        tokens.push({ type: 'text', text: b.inner, isText: isProse });
+        i = b.endIndex;
+        continue;
+      }
+    }
+    if (matchesLatexMacro(expr, i, '\\operatorname') || expr.startsWith('\\operatorname*', i)) {
+      const b = extractBalanced(expr, i);
+      if (b) {
+        tokens.push({ type: 'text', text: b.inner, isFunction: true });
         i = b.endIndex;
         continue;
       }
@@ -1653,15 +1739,24 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
     }
     if (matchedGreek) continue;
 
-    // 12. Big Mathematical Operators with Limits (\int, \sum, \prod, \bigcup, \bigcap)
+    // 12. Big Mathematical Operators with Limits (\iint, \iiint, \oint, \int, \sum, \prod, \bigcup, \bigcap)
     if (
+      matchesLatexMacro(expr, i, '\\iiint') ||
+      matchesLatexMacro(expr, i, '\\iint') ||
+      matchesLatexMacro(expr, i, '\\oint') ||
       matchesLatexMacro(expr, i, '\\int') ||
       matchesLatexMacro(expr, i, '\\sum') ||
       matchesLatexMacro(expr, i, '\\prod') ||
       matchesLatexMacro(expr, i, '\\bigcup') ||
       matchesLatexMacro(expr, i, '\\bigcap')
     ) {
-      const sym = matchesLatexMacro(expr, i, '\\int')
+      const sym = matchesLatexMacro(expr, i, '\\iiint')
+        ? '\\iiint'
+        : matchesLatexMacro(expr, i, '\\iint')
+        ? '\\iint'
+        : matchesLatexMacro(expr, i, '\\oint')
+        ? '\\oint'
+        : matchesLatexMacro(expr, i, '\\int')
         ? '\\int'
         : matchesLatexMacro(expr, i, '\\sum')
         ? '\\sum'
@@ -1671,6 +1766,16 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
         ? '\\bigcup'
         : '\\bigcap';
       i += sym.length;
+
+      while (i < expr.length && (expr[i] === ' ' || expr[i] === '\t')) i++;
+      let forceLimits: boolean | undefined;
+      if (matchesLatexMacro(expr, i, '\\limits')) {
+        forceLimits = true;
+        i += 7;
+      } else if (matchesLatexMacro(expr, i, '\\nolimits')) {
+        forceLimits = false;
+        i += 9;
+      }
 
       let lower: MathToken[] | undefined;
       let upper: MathToken[] | undefined;
@@ -1713,12 +1818,13 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
         }
       }
 
-      if (lower || upper) {
+      if (lower || upper || forceLimits !== undefined) {
         tokens.push({
           type: 'big-op',
-          symbol: sym as '\\int' | '\\sum' | '\\prod' | '\\bigcup' | '\\bigcap',
+          symbol: sym as '\\int' | '\\iint' | '\\iiint' | '\\oint' | '\\sum' | '\\prod' | '\\bigcup' | '\\bigcap',
           lower,
           upper,
+          forceLimits,
         });
       } else {
         tokens.push({ type: 'operator', symbol: sym });
@@ -1805,12 +1911,12 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
     }
     if (matchesLatexMacro(expr, i, '\\emptyset')) {
       tokens.push({ type: 'operator', symbol: '∅' });
-      i += 8;
+      i += 9;
       continue;
     }
     if (matchesLatexMacro(expr, i, '\\varnothing')) {
       tokens.push({ type: 'operator', symbol: '∅' });
-      i += 10;
+      i += 11;
       continue;
     }
     if (matchesLatexMacro(expr, i, '\\wedge') || matchesLatexMacro(expr, i, '\\land')) {
@@ -1888,33 +1994,57 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
       i += 4;
       continue;
     }
-    if (matchesLatexMacro(expr, i, '\\hat')) {
-      const afterHat = i + 4;
-      let inner = '';
-      let nextIdx = afterHat;
-      if (expr[afterHat] === '{') {
-        const b = extractBalanced(expr, afterHat);
-        if (b) {
-          inner = b.inner;
-          nextIdx = b.endIndex;
+    if (matchesLatexMacro(expr, i, '\\iff')) {
+      tokens.push({ type: 'operator', symbol: '⇔' });
+      i += 4;
+      continue;
+    }
+
+    // Mathematical Accents: \hat, \widehat, \bar, \overline, \tilde, \widetilde, \dot, \ddot, \vec, \underline
+    const ACCENT_MACROS: Array<{ macro: string; symbol: string }> = [
+      { macro: '\\widehat', symbol: '^' },
+      { macro: '\\hat', symbol: '^' },
+      { macro: '\\overline', symbol: '\\bar' },
+      { macro: '\\bar', symbol: '\\bar' },
+      { macro: '\\widetilde', symbol: '\\tilde' },
+      { macro: '\\tilde', symbol: '\\tilde' },
+      { macro: '\\ddot', symbol: '\\ddot' },
+      { macro: '\\dot', symbol: '\\dot' },
+      { macro: '\\vec', symbol: '\\vec' },
+      { macro: '\\underline', symbol: '\\underline' },
+    ];
+    let matchedAccent = false;
+    for (const acc of ACCENT_MACROS) {
+      if (matchesLatexMacro(expr, i, acc.macro)) {
+        const afterMacro = i + acc.macro.length;
+        let inner = '';
+        let nextIdx = afterMacro;
+        if (expr[afterMacro] === '{') {
+          const b = extractBalanced(expr, afterMacro);
+          if (b) {
+            inner = b.inner;
+            nextIdx = b.endIndex;
+          }
+        } else if (afterMacro < expr.length) {
+          const matchSingle = expr.slice(afterMacro).match(/^\s*([a-zA-Z0-9])/);
+          if (matchSingle) {
+            inner = matchSingle[1];
+            nextIdx = afterMacro + matchSingle[0].length;
+          }
         }
-      } else if (afterHat < expr.length) {
-        const matchSingle = expr.slice(afterHat).match(/^\s*([a-zA-Z])/);
-        if (matchSingle) {
-          inner = matchSingle[1];
-          nextIdx = afterHat + matchSingle[0].length;
+        if (inner) {
+          tokens.push({
+            type: 'script',
+            base: parseLatexExpressionTokens(inner),
+            sup: [{ type: 'operator', symbol: acc.symbol }],
+          });
+          i = nextIdx;
+          matchedAccent = true;
+          break;
         }
-      }
-      if (inner) {
-        tokens.push({
-          type: 'script',
-          base: parseLatexExpressionTokens(inner),
-          sup: [{ type: 'operator', symbol: '^' }],
-        });
-        i = nextIdx;
-        continue;
       }
     }
+    if (matchedAccent) continue;
     if (matchesLatexMacro(expr, i, '\\pm')) {
       tokens.push({ type: 'operator', symbol: '±' });
       i += 3;
@@ -1953,11 +2083,6 @@ export function parseLatexExpressionTokens(expr: string): MathToken[] {
     if (matchesLatexMacro(expr, i, '\\partial')) {
       tokens.push({ type: 'operator', symbol: '∂' });
       i += 8;
-      continue;
-    }
-    if (matchesLatexMacro(expr, i, '\\nabla')) {
-      tokens.push({ type: 'operator', symbol: '∇' });
-      i += 6;
       continue;
     }
     if (matchesLatexMacro(expr, i, '\\infty')) {

@@ -103,8 +103,8 @@ export function morphContourNormals(
     
     // Unique noise value per vertex based on position and character instance
     const n = noise.get2D(cmd.x * 0.08 + charSeed, cmd.y * 0.08 + charSeed);
-    // Displace outward or inward scaled proportionally to font size
-    const displacement = n * intensity * 1.5 * scaledScale;
+    // Displace outward or inward scaled proportionally to font size (conservative 0.45px to prevent contour self-intersection)
+    const displacement = n * intensity * 0.45 * scaledScale;
     
     if (cmd.type === 'L') {
       result.push({
@@ -527,9 +527,9 @@ export class GlyphMutator {
         }
       }
 
-      // Convert tilt angle to shear
+      // Convert tilt angle to affine shear (tan is the true mathematical shear factor)
       const rad = (zTilt * Math.PI) / 180;
-      const shearedX = relX * zScaleX + Math.sin(rad) * -relY + noiseX;
+      const shearedX = relX * zScaleX + Math.tan(rad) * -relY + noiseX;
       const shearedY = relY * zScaleY + noiseY;
 
       return [x + shearedX, finalBaselineY + shearedY];
@@ -851,10 +851,18 @@ export class GlyphMutator {
     inkColor: string,
     chaos: number
   ) {
-    if (chaos <= 0) return;
+    const scale = fontSize / 28;
+    if (chaos <= 0) {
+      ctx.save();
+      ctx.fillStyle = inkColor;
+      ctx.beginPath();
+      ctx.arc(basePos.x, basePos.y, Math.max(0.9, 1.25 * scale), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      return;
+    }
 
     // Hand momentum drift to the right: 2px - 9px (scaled by font size)
-    const scale = fontSize / 28;
     const driftX = (2.0 + this.noise.random() * 7.0 * chaos) * scale;
     const driftY = ((this.noise.random() - 0.5) * 8.0 * chaos) * scale;
 

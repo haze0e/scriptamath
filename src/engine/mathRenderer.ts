@@ -32,13 +32,13 @@ export function measureFontStemWidth(font: opentype.Font, fontSize: number): num
   const glyph = font.charToGlyph('l');
   const unitsPerEm = font.unitsPerEm > 0 ? font.unitsPerEm : 1000;
   const advance = glyph.advanceWidth ? (glyph.advanceWidth * fontSize) / unitsPerEm : fontSize * 0.25;
-  // Authentic ballpoint stroke width ranges between 2.1px and 2.8px at fontSize 27
-  return Math.max(2.1, Math.min(2.8, advance * 0.35));
+  // Authentic fine-to-medium ballpoint stroke width ranges between 1.35px and 2.4px at fontSize 27
+  return Math.max(1.35, Math.min(2.4, advance * 0.32));
 }
 
 export class MathRenderer {
   private noise: SeededNoise;
-  private calibratedLineWidth = 2.4;
+  private calibratedLineWidth = 1.6;
   private allographHistory: Map<string, number> = new Map();
 
   constructor(noise: SeededNoise) {
@@ -46,11 +46,11 @@ export class MathRenderer {
   }
 
   public setCalibratedLineWidth(width: number) {
-    this.calibratedLineWidth = Math.max(1.8, Math.min(3.2, width));
+    this.calibratedLineWidth = Math.max(1.15, Math.min(2.8, width));
   }
 
   public getBaseLineWidth(scale: number, multiplier = 1.0): number {
-    return Math.max(1.7, this.calibratedLineWidth * scale * multiplier);
+    return Math.max(0.85, this.calibratedLineWidth * scale * multiplier);
   }
 
   /**
@@ -470,28 +470,31 @@ export class MathRenderer {
 
     ctx.save();
     ctx.strokeStyle = inkColor;
-    ctx.lineWidth = Math.max(1.3, 1.7 * scale);
+    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
     ctx.lineCap = 'round';
 
     const plusY = isMinusPlus ? centerY + 4.5 * scale : centerY - 4.5 * scale;
     const minusY = isMinusPlus ? centerY - 4.5 * scale : centerY + 4.5 * scale;
+    const j1 = (this.noise.random() - 0.5) * 0.8 * scale;
+    const j2 = (this.noise.random() - 0.5) * 0.8 * scale;
+    const j3 = (this.noise.random() - 0.5) * 0.8 * scale;
 
     // Plus horizontal
     ctx.beginPath();
-    ctx.moveTo(x, plusY);
-    ctx.lineTo(x + size, plusY);
+    ctx.moveTo(x, plusY + j1);
+    ctx.lineTo(x + size, plusY - j1);
     ctx.stroke();
 
     // Plus vertical
     ctx.beginPath();
-    ctx.moveTo(x + size * 0.5, plusY - size * 0.45);
-    ctx.lineTo(x + size * 0.5, plusY + size * 0.45);
+    ctx.moveTo(x + size * 0.5 + j2, plusY - size * 0.45);
+    ctx.lineTo(x + size * 0.5 - j2, plusY + size * 0.45);
     ctx.stroke();
 
     // Minus bar
     ctx.beginPath();
-    ctx.moveTo(x - 0.5 * scale, minusY);
-    ctx.lineTo(x + size + 0.5 * scale, minusY);
+    ctx.moveTo(x - 0.5 * scale, minusY + j3);
+    ctx.lineTo(x + size + 0.5 * scale, minusY - j3);
     ctx.stroke();
 
     ctx.restore();
@@ -1246,23 +1249,21 @@ export class MathRenderer {
 
     const stemSlant = (style === 1 ? -0.8 : 0.4) * scale;
 
-    // Oval body
+    // Organic hand-drawn loop
+    const cx = x + w * 0.50;
+    const cy = (loopTopY + loopBotY) * 0.5;
+    const rx = w * 0.44;
+    const ry = (loopBotY - loopTopY) * 0.5;
     ctx.beginPath();
-    ctx.ellipse(
-      x + w * 0.50,
-      (loopTopY + loopBotY) / 2,
-      w * 0.42,
-      (loopBotY - loopTopY) / 2,
-      (style === 1 ? -0.08 : 0.05),
-      0,
-      Math.PI * 2
-    );
+    ctx.moveTo(cx, loopTopY);
+    ctx.bezierCurveTo(cx - rx * 1.15, loopTopY, cx - rx * 1.15, loopBotY, cx, loopBotY);
+    ctx.bezierCurveTo(cx + rx * 1.15, loopBotY, cx + rx * 1.15, loopTopY, cx + (this.noise.random() - 0.5) * scale, loopTopY);
     ctx.stroke();
 
-    // Vertical stem
+    // Hand-drawn through-stem with slight pressure taper & organic tilt
     ctx.beginPath();
-    ctx.moveTo(x + w * 0.50 + stemSlant, stemTopY);
-    ctx.lineTo(x + w * 0.50 - stemSlant, stemBotY);
+    ctx.moveTo(cx + stemSlant, stemTopY);
+    ctx.quadraticCurveTo(cx + (this.noise.random() - 0.5) * 0.8 * scale, cy, cx - stemSlant, stemBotY);
     ctx.stroke();
 
     ctx.restore();
@@ -1434,16 +1435,14 @@ export class MathRenderer {
       ctx.lineTo(x + w, topY);
       ctx.stroke();
 
+      const cx = x + w * 0.45;
+      const cy = (topY + bottomY) * 0.5;
+      const rx = w * 0.40;
+      const ry = (bottomY - topY) * 0.5;
       ctx.beginPath();
-      ctx.ellipse(
-        x + w * 0.45,
-        (topY + bottomY) / 2,
-        w * 0.40,
-        (bottomY - topY) / 2,
-        0,
-        0,
-        Math.PI * 2
-      );
+      ctx.moveTo(cx, topY);
+      ctx.bezierCurveTo(cx - rx * 1.15, topY, cx - rx * 1.15, bottomY, cx, bottomY);
+      ctx.bezierCurveTo(cx + rx * 1.15, bottomY, cx + rx * 1.15, topY, cx, topY);
       ctx.stroke();
     }
 
@@ -1654,19 +1653,20 @@ export class MathRenderer {
     ctx.lineWidth = Math.max(1.3, this.getBaseLineWidth(scale, 0.95));
     ctx.lineCap = 'round';
 
+    const totalH = bottomY - topY;
     ctx.beginPath();
     if (style === 1) {
       // Rapid cursive partial
-      ctx.moveTo(x + w * 0.82, topY + 1 * scale);
-      ctx.bezierCurveTo(x + w * 0.4, topY - 2 * scale, x + w * 0.1, topY + 3 * scale, x + w * 0.12, topY + (bottomY - topY) * 0.45);
-      ctx.bezierCurveTo(x + w * 0.08, bottomY + 1.5 * scale, x + w * 0.88, bottomY + 1.5 * scale, x + w * 0.82, topY + (bottomY - topY) * 0.40);
-      ctx.bezierCurveTo(x + w * 0.82, topY + 4 * scale, x + w * 0.35, topY + (bottomY - topY) * 0.45, x + w * 0.15, bottomY - 1 * scale);
+      ctx.moveTo(x + w * 0.80, topY + 2 * scale);
+      ctx.bezierCurveTo(x + w * 0.45, topY - 1.5 * scale, x + w * 0.16, topY + 2 * scale, x + w * 0.18, topY + totalH * 0.45);
+      ctx.bezierCurveTo(x + w * 0.10, bottomY + 1.2 * scale, x + w * 0.84, bottomY + 1.2 * scale, x + w * 0.82, topY + totalH * 0.52);
+      ctx.bezierCurveTo(x + w * 0.80, topY + totalH * 0.38, x + w * 0.42, topY + totalH * 0.40, x + w * 0.18, topY + totalH * 0.50);
     } else {
       // Classic curved partial
-      ctx.moveTo(x + w * 0.85, topY + 2 * scale);
-      ctx.bezierCurveTo(x + w * 0.6, topY - 2 * scale, x + w * 0.1, topY + 4 * scale, x + w * 0.15, topY + (bottomY - topY) * 0.5);
-      ctx.bezierCurveTo(x + w * 0.05, bottomY + 2 * scale, x + w * 0.85, bottomY + 2 * scale, x + w * 0.85, topY + (bottomY - topY) * 0.45);
-      ctx.bezierCurveTo(x + w * 0.85, topY, x + w * 0.25, topY + (bottomY - topY) * 0.5, x + w * 0.15, bottomY - 3 * scale);
+      ctx.moveTo(x + w * 0.84, topY + 2 * scale);
+      ctx.bezierCurveTo(x + w * 0.55, topY - 1.8 * scale, x + w * 0.15, topY + 2 * scale, x + w * 0.18, topY + totalH * 0.45);
+      ctx.bezierCurveTo(x + w * 0.10, bottomY + 1.5 * scale, x + w * 0.85, bottomY + 1.5 * scale, x + w * 0.82, topY + totalH * 0.52);
+      ctx.bezierCurveTo(x + w * 0.80, topY + totalH * 0.38, x + w * 0.45, topY + totalH * 0.42, x + w * 0.18, topY + totalH * 0.50);
     }
     ctx.stroke();
 
@@ -1749,20 +1749,24 @@ export class MathRenderer {
 
     ctx.save();
     ctx.strokeStyle = inkColor;
-    ctx.lineWidth = Math.max(1.4, 2.0 * scale);
+    ctx.lineWidth = this.getBaseLineWidth(scale, 1.05);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
+    const j1 = (this.noise.random() - 0.5) * 0.7 * scale;
+    const j2 = (this.noise.random() - 0.5) * 0.7 * scale;
+    const j3 = (this.noise.random() - 0.5) * 0.7 * scale;
+
     ctx.beginPath();
     // Top bar with overshoot
-    ctx.moveTo(x + w + 2 * scale, topY - 0.5 * scale);
+    ctx.moveTo(x + w + 2 * scale, topY - 0.5 * scale + j1);
     ctx.lineTo(x, topY);
     // Upper diagonal to wedge
-    ctx.lineTo(x + w * 0.55, centerY);
+    ctx.lineTo(x + w * 0.55 + j2, centerY);
     // Lower diagonal from wedge
     ctx.lineTo(x, bottomY);
     // Bottom bar with overshoot
-    ctx.lineTo(x + w + 2 * scale, bottomY + 0.5 * scale);
+    ctx.lineTo(x + w + 2 * scale, bottomY + 0.5 * scale + j3);
     ctx.stroke();
 
     ctx.restore();
@@ -1785,25 +1789,29 @@ export class MathRenderer {
 
     ctx.save();
     ctx.strokeStyle = inkColor;
-    ctx.lineWidth = Math.max(1.4, 2.0 * scale);
+    ctx.lineWidth = this.getBaseLineWidth(scale, 1.05);
     ctx.lineCap = 'round';
+
+    const j1 = (this.noise.random() - 0.5) * 0.6 * scale;
+    const j2 = (this.noise.random() - 0.5) * 0.6 * scale;
+    const j3 = (this.noise.random() - 0.5) * 0.6 * scale;
 
     // Top horizontal beam overhanging
     ctx.beginPath();
-    ctx.moveTo(x - 2 * scale, topY);
-    ctx.lineTo(x + w + 2 * scale, topY);
+    ctx.moveTo(x - 2 * scale, topY + j1);
+    ctx.lineTo(x + w + 2 * scale, topY - j1);
     ctx.stroke();
 
     // Left pillar (slight tilt)
     ctx.beginPath();
-    ctx.moveTo(x + 3 * scale, topY);
-    ctx.lineTo(x + 2 * scale, bottomY);
+    ctx.moveTo(x + 3 * scale + j2, topY);
+    ctx.lineTo(x + 2 * scale - j2, bottomY);
     ctx.stroke();
 
     // Right pillar (slight tilt)
     ctx.beginPath();
-    ctx.moveTo(x + w - 3 * scale, topY);
-    ctx.lineTo(x + w - 2 * scale, bottomY);
+    ctx.moveTo(x + w - 3 * scale + j3, topY);
+    ctx.lineTo(x + w - 2 * scale - j3, bottomY);
     ctx.stroke();
 
     ctx.restore();
@@ -1875,14 +1883,17 @@ export class MathRenderer {
 
     ctx.save();
     ctx.strokeStyle = inkColor;
-    ctx.lineWidth = Math.max(1.3, 1.7 * scale);
+    ctx.lineWidth = this.getBaseLineWidth(scale, 1.0);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
+    const j1 = (this.noise.random() - 0.5) * 0.7 * scale;
+    const j2 = (this.noise.random() - 0.5) * 0.7 * scale;
+
     ctx.beginPath();
-    ctx.moveTo(x, topY);
-    ctx.lineTo(x + width, topY);
-    ctx.lineTo(x + width * 0.5, bottomY);
+    ctx.moveTo(x - 0.5 * scale, topY + j1);
+    ctx.lineTo(x + width + 0.5 * scale, topY - j1);
+    ctx.lineTo(x + width * 0.5 + j2, bottomY);
     ctx.lineTo(x, topY);
     ctx.stroke();
     ctx.restore();
@@ -2017,16 +2028,17 @@ export class MathRenderer {
   ): number {
     const scale = fontSize / 28;
     const height = bottomY - topY;
-    const curveWidth = (5.5 + this.noise.random() * 3.5) * scale;
+    const pad = 2.5 * scale;
+    const curveWidth = (5.5 + this.noise.random() * 2.5) * scale;
 
-    // Opening and closing parentheses have independent vertical jitter and height!
-    const topShift = (this.noise.random() - 0.5) * 4.5 * scale;
-    const botShift = (this.noise.random() - 0.35) * 5.5 * scale; // Bias slightly downward
+    // Opening and closing parentheses have independent vertical jitter and height
+    const topShift = (this.noise.random() - 0.5) * 3.5 * scale;
+    const botShift = (this.noise.random() - 0.35) * 4.0 * scale;
     const actualTopY = topY + topShift;
     const actualBottomY = bottomY + botShift;
 
     // Forward hand slant (+2° to +7° top-to-bottom offset)
-    const slantOffset = (1.0 + this.noise.random() * 2.5) * scale;
+    const slantOffset = (0.8 + this.noise.random() * 1.8) * scale;
 
     ctx.save();
     ctx.strokeStyle = inkColor;
@@ -2035,30 +2047,32 @@ export class MathRenderer {
 
     ctx.beginPath();
     if (isOpen) {
-      const startX = x + curveWidth + slantOffset * 0.5;
-      const endX = x + curveWidth - slantOffset * 0.5 + (this.noise.random() - 0.5) * 2 * scale;
-      const ctrl1X = x - curveWidth * (0.15 + this.noise.random() * 0.35);
-      const ctrl2X = x - curveWidth * (0.25 + this.noise.random() * 0.35);
+      // Leftmost point is strictly at x + pad, so it never intersects preceding token
+      const startX = x + pad + curveWidth + slantOffset * 0.4;
+      const endX = x + pad + curveWidth - slantOffset * 0.4 + (this.noise.random() - 0.5) * 1.5 * scale;
+      const ctrl1X = x + pad;
+      const ctrl2X = x + pad;
       ctx.moveTo(startX, actualTopY);
       ctx.bezierCurveTo(
         ctrl1X,
-        actualTopY + height * (0.25 + this.noise.random() * 0.1),
+        actualTopY + height * (0.24 + this.noise.random() * 0.08),
         ctrl2X,
-        actualBottomY - height * (0.20 + this.noise.random() * 0.1),
+        actualBottomY - height * (0.22 + this.noise.random() * 0.08),
         endX,
         actualBottomY
       );
     } else {
-      const startX = x + slantOffset * 0.5;
-      const endX = x - slantOffset * 0.5 + (this.noise.random() - 0.5) * 2.5 * scale;
-      const ctrl1X = x + curveWidth * (1.15 + this.noise.random() * 0.40);
-      const ctrl2X = x + curveWidth * (1.05 + this.noise.random() * 0.35);
+      // Closing parenthesis: leftmost tips at x + pad, outward bulge at x + pad + curveWidth
+      const startX = x + pad + slantOffset * 0.4;
+      const endX = x + pad - slantOffset * 0.4 + (this.noise.random() - 0.5) * 1.5 * scale;
+      const ctrl1X = x + pad + curveWidth;
+      const ctrl2X = x + pad + curveWidth;
       ctx.moveTo(startX, actualTopY);
       ctx.bezierCurveTo(
         ctrl1X,
-        actualTopY + height * (0.20 + this.noise.random() * 0.15),
+        actualTopY + height * (0.22 + this.noise.random() * 0.08),
         ctrl2X,
-        actualBottomY - height * (0.25 + this.noise.random() * 0.15),
+        actualBottomY - height * (0.24 + this.noise.random() * 0.08),
         endX,
         actualBottomY
       );
@@ -2066,7 +2080,7 @@ export class MathRenderer {
     ctx.stroke();
     ctx.restore();
 
-    return curveWidth + (3 + this.noise.random() * 2.5) * scale;
+    return pad + curveWidth + 3.0 * scale;
   }
 
   /**
@@ -2207,8 +2221,9 @@ export class MathRenderer {
     const totalH = bottomY - topY;
     const cuspRatio = style === 1 ? 0.48 : (0.43 + (this.noise.random() - 0.5) * 0.04);
     const cuspY = topY + totalH * cuspRatio;
-    const cuspX = isOpen ? x : x + braceW;
-    const outerX = isOpen ? x + braceW : x;
+    const pad = 2.0 * scale;
+    const cuspX = isOpen ? x + pad : x + pad + braceW;
+    const outerX = isOpen ? x + pad + braceW : x + pad;
     const lineWidth = this.getBaseLineWidth(scale, 0.95);
 
     ctx.save();
@@ -2223,53 +2238,53 @@ export class MathRenderer {
       if (style === 1) {
         // Rapid crisp-cusp {
         ctx.moveTo(outerX + 1 * scale, topY);
-        ctx.quadraticCurveTo(x + braceW * 0.20, topY, x + braceW * 0.20, cuspY - 3 * scale);
-        ctx.lineTo(cuspX - 0.5 * scale, cuspY);
-        ctx.lineTo(x + braceW * 0.20, cuspY + 3 * scale);
-        ctx.quadraticCurveTo(x + braceW * 0.20, bottomY, outerX + 1.5 * scale, bottomY);
+        ctx.quadraticCurveTo(x + pad + braceW * 0.20, topY, x + pad + braceW * 0.20, cuspY - 3 * scale);
+        ctx.lineTo(cuspX, cuspY);
+        ctx.lineTo(x + pad + braceW * 0.20, cuspY + 3 * scale);
+        ctx.quadraticCurveTo(x + pad + braceW * 0.20, bottomY, outerX + 1.5 * scale, bottomY);
       } else if (style === 2) {
         // Fluid cursive rounded { with crisp outward cusp
         ctx.moveTo(outerX, topY + 1 * scale);
-        ctx.quadraticCurveTo(x + braceW * 0.35, topY, x + braceW * 0.25, cuspY - 2.5 * scale);
-        ctx.lineTo(cuspX - 1.5 * scale, cuspY);
-        ctx.lineTo(x + braceW * 0.25, cuspY + 2.5 * scale);
-        ctx.quadraticCurveTo(x + braceW * 0.35, bottomY, outerX + 1 * scale, bottomY - 1 * scale);
+        ctx.quadraticCurveTo(x + pad + braceW * 0.35, topY, x + pad + braceW * 0.25, cuspY - 2.5 * scale);
+        ctx.lineTo(cuspX, cuspY);
+        ctx.lineTo(x + pad + braceW * 0.25, cuspY + 2.5 * scale);
+        ctx.quadraticCurveTo(x + pad + braceW * 0.35, bottomY, outerX + 1 * scale, bottomY - 1 * scale);
       } else {
         // Classic asymmetric lobe {
         ctx.moveTo(outerX, topY + (this.noise.random() - 0.5) * 1.5 * scale);
-        ctx.quadraticCurveTo(x + braceW * 0.25, topY + 1 * scale, x + braceW * 0.28, topY + totalH * 0.22);
-        ctx.bezierCurveTo(x + braceW * 0.28, cuspY - 3 * scale, x + braceW * 0.10, cuspY - 1 * scale, cuspX - 1.2 * scale, cuspY);
-        ctx.bezierCurveTo(x + braceW * 0.10, cuspY + 2 * scale, x + braceW * 0.25, cuspY + 5 * scale, x + braceW * 0.25, topY + totalH * 0.75);
-        ctx.quadraticCurveTo(x + braceW * 0.22, bottomY - 1 * scale, outerX + 1.5 * scale, bottomY + (this.noise.random() - 0.5) * 1.5 * scale);
+        ctx.quadraticCurveTo(x + pad + braceW * 0.25, topY + 1 * scale, x + pad + braceW * 0.28, topY + totalH * 0.22);
+        ctx.bezierCurveTo(x + pad + braceW * 0.28, cuspY - 3 * scale, x + pad + braceW * 0.10, cuspY - 1 * scale, cuspX, cuspY);
+        ctx.bezierCurveTo(x + pad + braceW * 0.10, cuspY + 2 * scale, x + pad + braceW * 0.25, cuspY + 5 * scale, x + pad + braceW * 0.25, topY + totalH * 0.75);
+        ctx.quadraticCurveTo(x + pad + braceW * 0.22, bottomY - 1 * scale, outerX + 1.5 * scale, bottomY + (this.noise.random() - 0.5) * 1.5 * scale);
       }
     } else {
       if (style === 1) {
         // Rapid crisp-cusp }
         ctx.moveTo(outerX - 1 * scale, topY);
-        ctx.quadraticCurveTo(x + braceW * 0.80, topY, x + braceW * 0.80, cuspY - 3 * scale);
-        ctx.lineTo(cuspX + 1.5 * scale, cuspY);
-        ctx.lineTo(x + braceW * 0.80, cuspY + 3 * scale);
-        ctx.quadraticCurveTo(x + braceW * 0.80, bottomY, outerX - 1.5 * scale, bottomY);
+        ctx.quadraticCurveTo(x + pad + braceW * 0.80, topY, x + pad + braceW * 0.80, cuspY - 3 * scale);
+        ctx.lineTo(cuspX, cuspY);
+        ctx.lineTo(x + pad + braceW * 0.80, cuspY + 3 * scale);
+        ctx.quadraticCurveTo(x + pad + braceW * 0.80, bottomY, outerX - 1.5 * scale, bottomY);
       } else if (style === 2) {
         // Fluid cursive rounded } with crisp outward cusp
         ctx.moveTo(outerX, topY + 1 * scale);
-        ctx.quadraticCurveTo(x + braceW * 0.65, topY, x + braceW * 0.75, cuspY - 2.5 * scale);
-        ctx.lineTo(cuspX + 1.5 * scale, cuspY);
-        ctx.lineTo(x + braceW * 0.75, cuspY + 2.5 * scale);
-        ctx.quadraticCurveTo(x + braceW * 0.65, bottomY, outerX - 1 * scale, bottomY - 1 * scale);
+        ctx.quadraticCurveTo(x + pad + braceW * 0.65, topY, x + pad + braceW * 0.75, cuspY - 2.5 * scale);
+        ctx.lineTo(cuspX, cuspY);
+        ctx.lineTo(x + pad + braceW * 0.75, cuspY + 2.5 * scale);
+        ctx.quadraticCurveTo(x + pad + braceW * 0.65, bottomY, outerX - 1 * scale, bottomY - 1 * scale);
       } else {
         // Classic asymmetric lobe }
         ctx.moveTo(outerX, topY + (this.noise.random() - 0.5) * 1.5 * scale);
-        ctx.quadraticCurveTo(x + braceW * 0.75, topY + 1 * scale, x + braceW * 0.72, topY + totalH * 0.22);
-        ctx.bezierCurveTo(x + braceW * 0.72, cuspY - 3 * scale, x + braceW * 0.90, cuspY - 1 * scale, cuspX + 1.2 * scale, cuspY);
-        ctx.bezierCurveTo(x + braceW * 0.90, cuspY + 2 * scale, x + braceW * 0.75, cuspY + 5 * scale, x + braceW * 0.75, topY + totalH * 0.75);
-        ctx.quadraticCurveTo(x + braceW * 0.78, bottomY - 1 * scale, outerX - 1.5 * scale, bottomY + (this.noise.random() - 0.5) * 1.5 * scale);
+        ctx.quadraticCurveTo(x + pad + braceW * 0.75, topY + 1 * scale, x + pad + braceW * 0.72, topY + totalH * 0.22);
+        ctx.bezierCurveTo(x + pad + braceW * 0.72, cuspY - 3 * scale, x + pad + braceW * 0.90, cuspY - 1 * scale, cuspX, cuspY);
+        ctx.bezierCurveTo(x + pad + braceW * 0.90, cuspY + 2 * scale, x + pad + braceW * 0.75, cuspY + 5 * scale, x + pad + braceW * 0.75, topY + totalH * 0.75);
+        ctx.quadraticCurveTo(x + pad + braceW * 0.78, bottomY - 1 * scale, outerX - 1.5 * scale, bottomY + (this.noise.random() - 0.5) * 1.5 * scale);
       }
     }
     ctx.stroke();
     ctx.restore();
 
-    return braceW + 6 * scale;
+    return pad + braceW + 6 * scale;
   }
 
   /**
@@ -2450,11 +2465,13 @@ export class MathRenderer {
     ctx.strokeStyle = inkColor;
     ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
     ctx.lineCap = 'round';
+    const j1 = (this.noise.random() - 0.5) * 0.8 * scale;
+    const j2 = (this.noise.random() - 0.5) * 0.8 * scale;
     ctx.beginPath();
-    ctx.moveTo(x, centerY - size * 0.5);
-    ctx.lineTo(x + size, centerY + size * 0.5);
-    ctx.moveTo(x + size, centerY - size * 0.5);
-    ctx.lineTo(x, centerY + size * 0.5);
+    ctx.moveTo(x, centerY - size * 0.5 + j1);
+    ctx.lineTo(x + size, centerY + size * 0.5 - j1);
+    ctx.moveTo(x + size, centerY - size * 0.5 + j2);
+    ctx.lineTo(x, centerY + size * 0.5 - j2);
     ctx.stroke();
     ctx.restore();
     return size + 6 * scale;
@@ -2473,7 +2490,8 @@ export class MathRenderer {
     baselineY: number,
     fontSize: number,
     inkColor: string,
-    spanLines = 1
+    spanLines = 1,
+    type: '\\int' | '\\iint' | '\\iiint' | '\\oint' = '\\int'
   ): number {
     const scale = fontSize / 28;
     const style = this.getNextAllograph('integral', 3);
@@ -2483,7 +2501,8 @@ export class MathRenderer {
     const bottomY = baselineY + height * (0.34 + this.noise.random() * 0.05);
     const totalH = bottomY - topY;
     const w = (14.0 + this.noise.random() * 3.5) * scale;
-    const cx = x + w * 0.45;
+    const strokeCount = type === '\\iiint' ? 3 : type === '\\iint' ? 2 : 1;
+    const strokeSpacing = 8.0 * scale;
 
     ctx.save();
     ctx.strokeStyle = inkColor;
@@ -2491,62 +2510,80 @@ export class MathRenderer {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    ctx.beginPath();
-    if (style === 1) {
-      // Rapid slanted student integral (crisp turnaround, diagonal spine)
-      const topHookW = (4.5 + this.noise.random() * 2.0) * scale;
-      ctx.moveTo(cx + topHookW, topY + (3.0 + this.noise.random() * 1.5) * scale);
-      ctx.quadraticCurveTo(cx + 1.2 * scale, topY - 1.2 * scale, cx - 0.5 * scale, topY + totalH * 0.20);
-      ctx.lineTo(cx + (this.noise.random() - 0.5) * 0.8 * scale, bottomY - totalH * 0.20);
-      ctx.quadraticCurveTo(cx - 1.2 * scale, bottomY + 1.2 * scale, cx - (5.5 + this.noise.random() * 2.0) * scale, bottomY - 2.0 * scale);
-    } else if (style === 2) {
-      // Flared broad student integral (generous top lobe, wider italic curve)
-      const topHookW = (7.5 + this.noise.random() * 2.5) * scale;
-      const botHookW = (8.0 + this.noise.random() * 2.5) * scale;
-      ctx.moveTo(cx + topHookW, topY + (5.5 + this.noise.random() * 1.5) * scale);
-      ctx.bezierCurveTo(
-        cx + 5.0 * scale, topY - 2.0 * scale,
-        cx - 2.5 * scale, topY + 0.8 * scale,
-        cx - 1.5 * scale, topY + totalH * 0.25
-      );
-      ctx.bezierCurveTo(
-        cx + 1.2 * scale, topY + totalH * 0.46,
-        cx + 1.8 * scale, topY + totalH * 0.68,
-        cx - 0.6 * scale, bottomY - totalH * 0.16
-      );
-      ctx.bezierCurveTo(
-        cx - 2.0 * scale, bottomY + 1.8 * scale,
-        cx - botHookW * 0.85, bottomY + 0.8 * scale,
-        cx - botHookW, bottomY - (4.0 + this.noise.random() * 1.5) * scale
-      );
-    } else {
-      // Classic Leibniz sweeping S-curve
-      const topTipX = (6.0 + this.noise.random() * 2.2) * scale;
-      const topTipY = (4.0 + this.noise.random() * 1.5) * scale;
-      const botTipX = (7.0 + this.noise.random() * 2.0) * scale;
-      const botTipY = (3.2 + this.noise.random() * 1.5) * scale;
+    for (let sIdx = 0; sIdx < strokeCount; sIdx++) {
+      const cx = x + sIdx * strokeSpacing + w * 0.45;
+      ctx.beginPath();
+      if (style === 1) {
+        // Rapid slanted student integral (crisp turnaround, diagonal spine)
+        const topHookW = (4.5 + this.noise.random() * 2.0) * scale;
+        ctx.moveTo(cx + topHookW, topY + (3.0 + this.noise.random() * 1.5) * scale);
+        ctx.quadraticCurveTo(cx + 1.2 * scale, topY - 1.2 * scale, cx - 0.5 * scale, topY + totalH * 0.20);
+        ctx.lineTo(cx + (this.noise.random() - 0.5) * 0.8 * scale, bottomY - totalH * 0.20);
+        ctx.quadraticCurveTo(cx - 1.2 * scale, bottomY + 1.2 * scale, cx - (5.5 + this.noise.random() * 2.0) * scale, bottomY - 2.0 * scale);
+      } else if (style === 2) {
+        // Flared broad student integral (generous top lobe, wider italic curve)
+        const topHookW = (7.5 + this.noise.random() * 2.5) * scale;
+        const botHookW = (8.0 + this.noise.random() * 2.5) * scale;
+        ctx.moveTo(cx + topHookW, topY + (5.5 + this.noise.random() * 1.5) * scale);
+        ctx.bezierCurveTo(
+          cx + 5.0 * scale, topY - 2.0 * scale,
+          cx - 2.5 * scale, topY + 0.8 * scale,
+          cx - 1.5 * scale, topY + totalH * 0.25
+        );
+        ctx.bezierCurveTo(
+          cx + 1.2 * scale, topY + totalH * 0.46,
+          cx + 1.8 * scale, topY + totalH * 0.68,
+          cx - 0.6 * scale, bottomY - totalH * 0.16
+        );
+        ctx.bezierCurveTo(
+          cx - 2.0 * scale, bottomY + 1.8 * scale,
+          cx - botHookW * 0.85, bottomY + 0.8 * scale,
+          cx - botHookW, bottomY - (4.0 + this.noise.random() * 1.5) * scale
+        );
+      } else {
+        // Classic Leibniz sweeping S-curve
+        const topTipX = (6.0 + this.noise.random() * 2.2) * scale;
+        const topTipY = (4.0 + this.noise.random() * 1.5) * scale;
+        const botTipX = (7.0 + this.noise.random() * 2.0) * scale;
+        const botTipY = (3.2 + this.noise.random() * 1.5) * scale;
 
-      ctx.moveTo(cx + topTipX, topY + topTipY);
-      ctx.bezierCurveTo(
-        cx + 4.2 * scale, topY - 1.2 * scale,
-        cx - 1.6 * scale, topY + 0.5 * scale,
-        cx - 1.0 * scale, topY + totalH * 0.22
-      );
-      ctx.bezierCurveTo(
-        cx + 0.8 * scale, topY + totalH * 0.44,
-        cx + 1.4 * scale, topY + totalH * 0.66,
-        cx - 0.5 * scale, bottomY - totalH * 0.18
-      );
-      ctx.bezierCurveTo(
-        cx - 1.6 * scale, bottomY + 1.2 * scale,
-        cx - botTipX * 0.8, bottomY + 0.4 * scale,
-        cx - botTipX, bottomY - botTipY
-      );
+        ctx.moveTo(cx + topTipX, topY + topTipY);
+        ctx.bezierCurveTo(
+          cx + 4.2 * scale, topY - 1.2 * scale,
+          cx - 1.6 * scale, topY + 0.5 * scale,
+          cx - 1.0 * scale, topY + totalH * 0.22
+        );
+        ctx.bezierCurveTo(
+          cx + 0.8 * scale, topY + totalH * 0.44,
+          cx + 1.4 * scale, topY + totalH * 0.66,
+          cx - 0.5 * scale, bottomY - totalH * 0.18
+        );
+        ctx.bezierCurveTo(
+          cx - 1.6 * scale, bottomY + 1.2 * scale,
+          cx - botTipX * 0.8, bottomY + 0.4 * scale,
+          cx - botTipX, bottomY - botTipY
+        );
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
+
+    if (type === '\\oint') {
+      const midY = (topY + bottomY) * 0.5;
+      const midX = x + w * 0.45;
+      const rx = (5.5 + (this.noise.random() - 0.5) * 0.8) * scale;
+      const ry = (4.0 + (this.noise.random() - 0.5) * 0.8) * scale;
+      const k = 0.5522847498;
+      ctx.beginPath();
+      ctx.moveTo(midX - rx, midY);
+      ctx.bezierCurveTo(midX - rx, midY - ry * k, midX - rx * k, midY - ry, midX, midY - ry);
+      ctx.bezierCurveTo(midX + rx * k, midY - ry, midX + rx, midY - ry * k, midX + rx, midY);
+      ctx.bezierCurveTo(midX + rx, midY + ry * k, midX + rx * k, midY + ry, midX, midY + ry);
+      ctx.bezierCurveTo(midX - rx * k, midY + ry, midX - rx, midY + ry * k, midX - rx, midY);
+      ctx.stroke();
+    }
 
     ctx.restore();
-    return w + 6 * scale;
+    return w + (strokeCount - 1) * strokeSpacing + 6 * scale;
   }
 
   /**
@@ -2602,6 +2639,7 @@ export class MathRenderer {
     const overshoot = (4 + this.noise.random() * 5) * scale;
     const vinculumEnd = x + rootCheckWidth + contentWidth + overshoot;
     const bowY = (this.noise.random() - 0.5) * 2.0 * scale;
+    const vinculumEndY = topY + (this.noise.random() - 0.5) * 1.8 * scale;
 
     ctx.beginPath();
     ctx.moveTo(x + rootCheckWidth, topY);
@@ -2609,14 +2647,14 @@ export class MathRenderer {
       x + rootCheckWidth + (contentWidth + overshoot) * 0.5,
       topY - bowY,
       vinculumEnd,
-      topY + (this.noise.random() - 0.5) * 1.8 * scale
+      vinculumEndY
     );
     ctx.stroke();
 
-    // Terminal downward tick
+    // Terminal downward tick connecting seamlessly to the vinculum tip
     ctx.beginPath();
-    ctx.moveTo(vinculumEnd, topY);
-    ctx.lineTo(vinculumEnd, topY + (3.0 + this.noise.random() * 1.5) * scale);
+    ctx.moveTo(vinculumEnd, vinculumEndY);
+    ctx.lineTo(vinculumEnd, vinculumEndY + (3.0 + this.noise.random() * 1.5) * scale);
     ctx.stroke();
 
     ctx.restore();
@@ -2821,7 +2859,8 @@ export class MathRenderer {
     height: number,
     fontSize: number,
     inkColor: string,
-    handwriting: HandwritingStyleSettings
+    handwriting: HandwritingStyleSettings,
+    isStandalone = false
   ) {
     const style = handwriting.answerBubbleStyle || 'box';
     const showCheckmark = handwriting.showAnswerCheckmarks ?? (handwriting.persona === 'girl-neat-cursive');
@@ -2963,8 +3002,8 @@ export class MathRenderer {
 
     if (showCheckmark) {
       this.drawCheckmark(ctx, rx + rw + 16, ry + rh * 0.55, fontSize * 0.85, inkColor);
-    } else {
-      // Handwritten "Ans" label on the bottom-right corner
+    } else if (isStandalone) {
+      // Handwritten "Ans" label on the bottom-right corner strictly for standalone final answer blocks
       const ansFontSize = Math.max(13, fontSize * 0.55);
       const labelText = "Ans.";
       const labelX = rx + rw - 34;
@@ -2985,8 +3024,10 @@ export class MathRenderer {
           nextChar: i < labelText.length - 1 ? labelText[i + 1] : null,
           lineProgress: 0.5,
           handwriting,
+          inkColor,
         });
 
+        res.path.fill = inkColor;
         ctx.fillStyle = inkColor;
         res.path.draw(ctx);
         cx += res.advanceWidth + 1;
@@ -3245,9 +3286,11 @@ export class MathRenderer {
         nextChar: i < cleanText.length - 1 ? cleanText[i + 1] : null,
         lineProgress: 0.5,
         handwriting,
+        inkColor,
       });
 
       ctx.save();
+      res.path.fill = inkColor;
       ctx.fillStyle = inkColor;
       res.path.draw(ctx);
       ctx.restore();
@@ -3397,16 +3440,19 @@ export class MathRenderer {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
+    const j1 = (this.noise.random() - 0.5) * 0.7 * scale;
+    const j2 = (this.noise.random() - 0.5) * 0.7 * scale;
+
     // Vertical right stem
     ctx.beginPath();
-    ctx.moveTo(x + w, topY);
-    ctx.lineTo(x + w, bottomY);
+    ctx.moveTo(x + w + j1, topY);
+    ctx.lineTo(x + w - j1, bottomY);
     ctx.stroke();
 
     // Top horizontal bar (pointing left)
     ctx.beginPath();
     ctx.moveTo(x + w, topY);
-    ctx.lineTo(x + 1 * scale, topY);
+    ctx.lineTo(x + 1 * scale, topY + j2);
     ctx.stroke();
 
     // Middle horizontal bar (pointing left)
@@ -3418,7 +3464,7 @@ export class MathRenderer {
     // Bottom horizontal bar (pointing left)
     ctx.beginPath();
     ctx.moveTo(x + w, bottomY);
-    ctx.lineTo(x + 1 * scale, bottomY);
+    ctx.lineTo(x + 1 * scale, bottomY - j2);
     ctx.stroke();
 
     ctx.restore();
@@ -3447,10 +3493,13 @@ export class MathRenderer {
     ctx.lineWidth = this.getBaseLineWidth(scale, 1.0);
     ctx.lineCap = 'round';
 
+    const j1 = (this.noise.random() - 0.5) * 0.6 * scale;
+    const j2 = (this.noise.random() - 0.5) * 0.6 * scale;
+
     ctx.beginPath();
     ctx.moveTo(x + 1 * scale, topY);
-    ctx.lineTo(x + 1 * scale, bottomY - 3 * scale);
-    ctx.quadraticCurveTo(x + w * 0.5, bottomY + 1 * scale, x + w - 1 * scale, bottomY - 3 * scale);
+    ctx.lineTo(x + 1 * scale + j1, bottomY - 3 * scale);
+    ctx.quadraticCurveTo(x + w * 0.5, bottomY + 1 * scale, x + w - 1 * scale + j2, bottomY - 3 * scale);
     ctx.lineTo(x + w - 1 * scale, topY);
     ctx.stroke();
 
@@ -3480,10 +3529,13 @@ export class MathRenderer {
     ctx.lineWidth = this.getBaseLineWidth(scale, 1.0);
     ctx.lineCap = 'round';
 
+    const j1 = (this.noise.random() - 0.5) * 0.6 * scale;
+    const j2 = (this.noise.random() - 0.5) * 0.6 * scale;
+
     ctx.beginPath();
     ctx.moveTo(x + 1 * scale, bottomY);
-    ctx.lineTo(x + 1 * scale, topY + 3 * scale);
-    ctx.quadraticCurveTo(x + w * 0.5, topY - 1 * scale, x + w - 1 * scale, topY + 3 * scale);
+    ctx.lineTo(x + 1 * scale + j1, topY + 3 * scale);
+    ctx.quadraticCurveTo(x + w * 0.5, topY - 1 * scale, x + w - 1 * scale + j2, topY + 3 * scale);
     ctx.lineTo(x + w - 1 * scale, bottomY);
     ctx.stroke();
 
@@ -3508,9 +3560,11 @@ export class MathRenderer {
 
     ctx.save();
     ctx.strokeStyle = inkColor;
-    ctx.lineWidth = Math.max(1.3, 1.7 * scale);
+    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+
+    const j = (this.noise.random() - 0.5) * 0.7 * scale;
 
     // Left vertical stop tick
     ctx.beginPath();
@@ -3521,14 +3575,14 @@ export class MathRenderer {
     // Horizontal shaft
     ctx.beginPath();
     ctx.moveTo(x + 1.5 * scale, centerY);
-    ctx.lineTo(x + len, centerY);
+    ctx.lineTo(x + len, centerY + j);
     ctx.stroke();
 
     // Arrowhead >
     const headLen = 5.5 * scale;
     ctx.beginPath();
     ctx.moveTo(x + len - headLen, centerY - 4 * scale);
-    ctx.lineTo(x + len, centerY);
+    ctx.lineTo(x + len, centerY + j);
     ctx.lineTo(x + len - headLen, centerY + 4 * scale);
     ctx.stroke();
 
@@ -3555,25 +3609,27 @@ export class MathRenderer {
 
     ctx.save();
     ctx.strokeStyle = inkColor;
-    ctx.lineWidth = Math.max(1.3, 1.7 * scale);
+    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
+    const j = (this.noise.random() - 0.5) * 0.7 * scale;
+
     // Vertical shaft
     ctx.beginPath();
-    ctx.moveTo(midX, topY);
-    ctx.lineTo(midX, bottomY);
+    ctx.moveTo(midX + j, topY);
+    ctx.lineTo(midX - j, bottomY);
     ctx.stroke();
 
     // Arrowhead
     ctx.beginPath();
     if (isUp) {
       ctx.moveTo(midX - headLen, topY + headLen);
-      ctx.lineTo(midX, topY);
+      ctx.lineTo(midX + j, topY);
       ctx.lineTo(midX + headLen, topY + headLen);
     } else {
       ctx.moveTo(midX - headLen, bottomY - headLen);
-      ctx.lineTo(midX, bottomY);
+      ctx.lineTo(midX - j, bottomY);
       ctx.lineTo(midX + headLen, bottomY - headLen);
     }
     ctx.stroke();
@@ -3603,15 +3659,18 @@ export class MathRenderer {
     ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
     ctx.lineCap = 'round';
 
-    // Oval zero/circle
+    // Oval zero/circle with organic Bézier curvature
+    const cx = x + rx + 1 * scale;
     ctx.beginPath();
-    ctx.ellipse(x + rx + 1 * scale, centerY, rx, ry, 0, 0, Math.PI * 2);
+    ctx.moveTo(cx, centerY - ry);
+    ctx.bezierCurveTo(cx - rx * 1.15, centerY - ry, cx - rx * 1.15, centerY + ry, cx, centerY + ry);
+    ctx.bezierCurveTo(cx + rx * 1.15, centerY + ry, cx + rx * 1.15, centerY - ry, cx + (this.noise.random() - 0.5) * scale, centerY - ry);
     ctx.stroke();
 
     // Diagonal forward slash passing completely through
     ctx.beginPath();
-    ctx.moveTo(x - 0.5 * scale, centerY + ry * 1.3);
-    ctx.lineTo(x + rx * 2 + 2.5 * scale, centerY - ry * 1.3);
+    ctx.moveTo(x - 1 * scale, centerY + ry * 1.25);
+    ctx.quadraticCurveTo(cx + (this.noise.random() - 0.5) * scale, centerY, x + rx * 2 + 3 * scale, centerY - ry * 1.25);
     ctx.stroke();
 
     ctx.restore();
@@ -3639,9 +3698,12 @@ export class MathRenderer {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
+    const j1 = (this.noise.random() - 0.5) * 0.7 * scale;
+    const j2 = (this.noise.random() - 0.5) * 0.7 * scale;
+
     ctx.beginPath();
     ctx.moveTo(x + 1 * scale, bottomY);
-    ctx.lineTo(x + w * 0.5, topY);
+    ctx.lineTo(x + w * 0.5 + j1, topY + j2);
     ctx.lineTo(x + w - 1 * scale, bottomY);
     ctx.stroke();
 
@@ -3670,9 +3732,12 @@ export class MathRenderer {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
+    const j1 = (this.noise.random() - 0.5) * 0.7 * scale;
+    const j2 = (this.noise.random() - 0.5) * 0.7 * scale;
+
     ctx.beginPath();
     ctx.moveTo(x + 1 * scale, topY);
-    ctx.lineTo(x + w * 0.5, bottomY);
+    ctx.lineTo(x + w * 0.5 + j1, bottomY + j2);
     ctx.lineTo(x + w - 1 * scale, topY);
     ctx.stroke();
 
@@ -3720,9 +3785,10 @@ export class MathRenderer {
 
     if (hasEqual) {
       const eqY = y - fontSize * 0.02;
+      const j = (this.noise.random() - 0.5) * 0.6 * scale;
       ctx.beginPath();
-      ctx.moveTo(x + 1 * scale, eqY);
-      ctx.lineTo(x + w - 1 * scale, eqY);
+      ctx.moveTo(x + 1 * scale, eqY + j);
+      ctx.lineTo(x + w - 1 * scale, eqY - j);
       ctx.stroke();
     }
 
@@ -3751,9 +3817,10 @@ export class MathRenderer {
     ctx.lineCap = 'round';
 
     for (const off of [-gap, 0, gap]) {
+      const j = (this.noise.random() - 0.5) * 0.6 * scale;
       ctx.beginPath();
-      ctx.moveTo(x + 1 * scale, midY + off);
-      ctx.lineTo(x + w - 1 * scale, midY + off);
+      ctx.moveTo(x + 1 * scale, midY + off + j);
+      ctx.lineTo(x + w - 1 * scale, midY + off - j);
       ctx.stroke();
     }
 
@@ -3782,16 +3849,19 @@ export class MathRenderer {
     ctx.lineWidth = this.getBaseLineWidth(scale, 1.0);
     ctx.lineCap = 'round';
 
+    const j1 = (this.noise.random() - 0.5) * 0.6 * scale;
+    const j2 = (this.noise.random() - 0.5) * 0.6 * scale;
+
     // Horizontal baseline
     ctx.beginPath();
-    ctx.moveTo(x + 1 * scale, bottomY);
-    ctx.lineTo(x + w - 1 * scale, bottomY);
+    ctx.moveTo(x + 1 * scale, bottomY + j1);
+    ctx.lineTo(x + w - 1 * scale, bottomY - j1);
     ctx.stroke();
 
     // Vertical upright
     ctx.beginPath();
-    ctx.moveTo(midX, bottomY);
-    ctx.lineTo(midX, topY);
+    ctx.moveTo(midX + j2, bottomY);
+    ctx.lineTo(midX - j2, topY);
     ctx.stroke();
 
     ctx.restore();
@@ -3820,11 +3890,14 @@ export class MathRenderer {
     ctx.lineWidth = this.getBaseLineWidth(scale, 1.0);
     ctx.lineCap = 'round';
 
+    const j1 = (this.noise.random() - 0.5) * 0.6 * scale;
+    const j2 = (this.noise.random() - 0.5) * 0.6 * scale;
+
     ctx.beginPath();
-    ctx.moveTo(midX - gap * 0.5, topY);
-    ctx.lineTo(midX - gap * 0.5, bottomY);
-    ctx.moveTo(midX + gap * 0.5, topY);
-    ctx.lineTo(midX + gap * 0.5, bottomY);
+    ctx.moveTo(midX - gap * 0.5 + j1, topY);
+    ctx.lineTo(midX - gap * 0.5 - j1, bottomY);
+    ctx.moveTo(midX + gap * 0.5 + j2, topY);
+    ctx.lineTo(midX + gap * 0.5 - j2, bottomY);
     ctx.stroke();
 
     ctx.restore();
@@ -3846,23 +3919,30 @@ export class MathRenderer {
     const centerY = y - fontSize * 0.32;
     const rx = 3.6 * scale;
     const ry = 4.2 * scale;
+    const cx = x + rx + 1 * scale;
 
     ctx.save();
     ctx.strokeStyle = inkColor;
     ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
     ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
 
-    // Left loop
+    // Organic hand-drawn loop
+    const j1 = (this.noise.random() - 0.5) * 0.6 * scale;
+    const j2 = (this.noise.random() - 0.5) * 0.6 * scale;
     ctx.beginPath();
-    ctx.ellipse(x + rx + 1 * scale, centerY, rx, ry, 0, 0, Math.PI * 2);
+    ctx.moveTo(cx, centerY - ry);
+    ctx.bezierCurveTo(cx - rx * 1.25, centerY - ry + j1, cx - rx * 1.25, centerY + ry + j2, cx, centerY + ry);
+    ctx.bezierCurveTo(cx + rx * 0.8, centerY + ry, cx + rx * 0.8, centerY - ry, cx, centerY - ry);
     ctx.stroke();
 
     // Right open arms (infinity with open right end)
+    const armJitter = (this.noise.random() - 0.5) * 0.8 * scale;
     ctx.beginPath();
-    ctx.moveTo(x + rx * 2 + 1 * scale, centerY);
-    ctx.quadraticCurveTo(x + w * 0.8, centerY - ry, x + w, centerY - ry * 0.8);
-    ctx.moveTo(x + rx * 2 + 1 * scale, centerY);
-    ctx.quadraticCurveTo(x + w * 0.8, centerY + ry, x + w, centerY + ry * 0.8);
+    ctx.moveTo(cx, centerY);
+    ctx.quadraticCurveTo(x + w * 0.8, centerY - ry + armJitter, x + w, centerY - ry * 0.85);
+    ctx.moveTo(cx, centerY);
+    ctx.quadraticCurveTo(x + w * 0.8, centerY + ry - armJitter, x + w, centerY + ry * 0.85);
     ctx.stroke();
 
     ctx.restore();
@@ -3882,13 +3962,21 @@ export class MathRenderer {
     const scale = fontSize / 28;
     const r = 3.0 * scale;
     const centerY = y - fontSize * 0.32;
+    const cx = x + r + 2 * scale;
 
     ctx.save();
     ctx.strokeStyle = inkColor;
     ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
 
+    const k = r * 1.25;
+    const jx = (this.noise.random() - 0.5) * 0.4 * scale;
+    const jy = (this.noise.random() - 0.5) * 0.4 * scale;
     ctx.beginPath();
-    ctx.arc(x + r + 2 * scale, centerY, r, 0, Math.PI * 2);
+    ctx.moveTo(cx, centerY - r);
+    ctx.bezierCurveTo(cx - k, centerY - r, cx - k, centerY + r, cx, centerY + r + jy);
+    ctx.bezierCurveTo(cx + k, centerY + r + jy, cx + k, centerY - r, cx + jx, centerY - r);
     ctx.stroke();
 
     ctx.restore();
@@ -3914,15 +4002,110 @@ export class MathRenderer {
     ctx.strokeStyle = inkColor;
     ctx.lineWidth = this.getBaseLineWidth(scale, 1.0);
     ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    const j1 = (this.noise.random() - 0.5) * 0.6 * scale;
+    const j2 = (this.noise.random() - 0.5) * 0.6 * scale;
 
     ctx.beginPath();
-    ctx.moveTo(x + 1 * scale, centerY);
-    ctx.lineTo(x + w, centerY);
-    ctx.lineTo(x + w, centerY + drop);
+    ctx.moveTo(x + 1 * scale, centerY + j1);
+    ctx.lineTo(x + w, centerY - j1);
+    ctx.lineTo(x + w + j2, centerY + drop);
     ctx.stroke();
 
     ctx.restore();
     return w + 4 * scale;
+  }
+
+  /**
+   * Procedural Angle Bracket: ⟨ or ⟩ (\langle / \rangle)
+   */
+  public drawAngleBracket(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    topY: number,
+    bottomY: number,
+    isOpen: boolean,
+    inkColor: string,
+    fontSize: number
+  ): number {
+    const scale = fontSize / 28;
+    const w = 8 * scale;
+    const midY = (topY + bottomY) * 0.5;
+    const midJitter = (this.noise.random() - 0.5) * 1.0 * scale;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    ctx.beginPath();
+    if (isOpen) {
+      // ⟨ : points left
+      const tipX = x + 1.5 * scale;
+      const rightX = x + w;
+      ctx.moveTo(rightX, topY);
+      ctx.lineTo(tipX, midY + midJitter);
+      ctx.lineTo(rightX, bottomY);
+    } else {
+      // ⟩ : points right
+      const tipX = x + w - 1.5 * scale;
+      const leftX = x;
+      ctx.moveTo(leftX, topY);
+      ctx.lineTo(tipX, midY + midJitter);
+      ctx.lineTo(leftX, bottomY);
+    }
+    ctx.stroke();
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  /**
+   * Procedural Floor / Ceiling Delimiters: ⌊ ⌋ ⌈ ⌉ (\lfloor, \rfloor, \lceil, \rceil)
+   */
+  public drawFloorCeil(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    topY: number,
+    bottomY: number,
+    type: 'floor-left' | 'floor-right' | 'ceil-left' | 'ceil-right',
+    inkColor: string,
+    fontSize: number
+  ): number {
+    const scale = fontSize / 28;
+    const hookW = 6.5 * scale;
+    const stemX = (type === 'floor-left' || type === 'ceil-left') ? x + 2 * scale : x + hookW;
+    const isFloor = type.startsWith('floor');
+    const isLeft = type.endsWith('left');
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 1.0);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    ctx.beginPath();
+    // Vertical stem with subtle organic jitter
+    const jStem = (this.noise.random() - 0.5) * 0.8 * scale;
+    ctx.moveTo(stemX, topY);
+    ctx.quadraticCurveTo(stemX + jStem, (topY + bottomY) * 0.5, stemX, bottomY);
+
+    // Horizontal shelf hook
+    if (isFloor) {
+      // shelf at bottom
+      const shelfX = isLeft ? stemX + hookW : stemX - hookW;
+      ctx.moveTo(stemX, bottomY);
+      ctx.lineTo(shelfX, bottomY + (this.noise.random() - 0.5) * 0.6 * scale);
+    } else {
+      // shelf at top
+      const shelfX = isLeft ? stemX + hookW : stemX - hookW;
+      ctx.moveTo(stemX, topY);
+      ctx.lineTo(shelfX, topY + (this.noise.random() - 0.5) * 0.6 * scale);
+    }
+    ctx.stroke();
+    ctx.restore();
+    return hookW + 6 * scale;
   }
 
   /**
@@ -4001,5 +4184,556 @@ export class MathRenderer {
     ctx.restore();
 
     return w + 3 * scale;
+  }
+
+  public drawXi(ctx: CanvasRenderingContext2D, x: number, y: number, fontSize: number, inkColor: string): number {
+    const scale = fontSize / 28;
+    const w = 10 * scale;
+    const topY = y - fontSize * 0.65;
+    const descY = y + fontSize * 0.32;
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + 2 * scale, topY);
+    ctx.quadraticCurveTo(x + w * 0.7, topY - 1 * scale, x + w * 0.5, topY + (y - topY) * 0.35);
+    ctx.quadraticCurveTo(x + w * 0.8, topY + (y - topY) * 0.65, x + w * 0.35, y);
+    ctx.bezierCurveTo(x + w * 0.5, y + 2 * scale, x + w * 0.2, descY, x + 0.5 * scale, descY - 2 * scale);
+    ctx.stroke();
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  public drawEpsilon(ctx: CanvasRenderingContext2D, x: number, y: number, fontSize: number, inkColor: string): number {
+    const scale = fontSize / 28;
+    const w = 9 * scale;
+    const topY = y - fontSize * 0.44;
+    const midY = (topY + y) * 0.5;
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.8, topY + 1 * scale);
+    ctx.bezierCurveTo(x + w * 0.2, topY, x + 1 * scale, midY - 1 * scale, x + w * 0.55, midY);
+    ctx.bezierCurveTo(x + 1 * scale, midY + 1 * scale, x + w * 0.15, y, x + w * 0.85, y - 0.5 * scale);
+    ctx.stroke();
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  public drawGammaLower(ctx: CanvasRenderingContext2D, x: number, y: number, fontSize: number, inkColor: string): number {
+    const scale = fontSize / 28;
+    const w = 10 * scale;
+    const topY = y - fontSize * 0.44;
+    const descY = y + fontSize * 0.32;
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + 1 * scale, topY);
+    ctx.bezierCurveTo(x + w * 0.35, y, x + w * 0.45, descY, x + w * 0.25, descY);
+    ctx.bezierCurveTo(x + w * 0.05, descY - 2 * scale, x + w * 0.4, y - 4 * scale, x + w * 0.88, topY + 1 * scale);
+    ctx.stroke();
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  public drawRho(ctx: CanvasRenderingContext2D, x: number, y: number, fontSize: number, inkColor: string): number {
+    const scale = fontSize / 28;
+    const w = 10 * scale;
+    const topY = y - fontSize * 0.44;
+    const descY = y + fontSize * 0.32;
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.28, topY + 2 * scale);
+    ctx.lineTo(x + w * 0.25, descY);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.28, descY * 0.3 + topY * 0.7);
+    ctx.bezierCurveTo(x + w * 0.5, topY - 1 * scale, x + w * 0.95, topY + 2 * scale, x + w * 0.88, (topY + y) * 0.5);
+    ctx.bezierCurveTo(x + w * 0.82, y + 1 * scale, x + w * 0.45, y, x + w * 0.26, y - 1 * scale);
+    ctx.stroke();
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  public drawEta(ctx: CanvasRenderingContext2D, x: number, y: number, fontSize: number, inkColor: string): number {
+    const scale = fontSize / 28;
+    const w = 10.5 * scale;
+    const topY = y - fontSize * 0.44;
+    const descY = y + fontSize * 0.32;
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.25, topY);
+    ctx.lineTo(x + w * 0.25, y);
+    ctx.moveTo(x + w * 0.25, topY + 4 * scale);
+    ctx.quadraticCurveTo(x + w * 0.65, topY - 1 * scale, x + w * 0.80, topY + 6 * scale);
+    ctx.bezierCurveTo(x + w * 0.80, y, x + w * 0.82, descY, x + w * 0.55, descY);
+    ctx.stroke();
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  public drawPsi(ctx: CanvasRenderingContext2D, x: number, y: number, fontSize: number, inkColor: string): number {
+    const scale = fontSize / 28;
+    const w = 12 * scale;
+    const topY = y - fontSize * 0.58;
+    const cupTopY = y - fontSize * 0.42;
+    const descY = y + fontSize * 0.28;
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + 1 * scale, cupTopY);
+    ctx.bezierCurveTo(x + 1 * scale, y + 1 * scale, x + w - 1 * scale, y + 1 * scale, x + w - 1 * scale, cupTopY);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.5, topY);
+    ctx.lineTo(x + w * 0.5, descY);
+    ctx.stroke();
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  public drawZeta(ctx: CanvasRenderingContext2D, x: number, y: number, fontSize: number, inkColor: string): number {
+    const scale = fontSize / 28;
+    const w = 9.5 * scale;
+    const topY = y - fontSize * 0.60;
+    const descY = y + fontSize * 0.32;
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + 1.5 * scale, topY);
+    ctx.quadraticCurveTo(x + w * 0.65, topY - 1 * scale, x + w * 0.4, topY + 5 * scale);
+    ctx.bezierCurveTo(x + w * 0.75, y - 2 * scale, x + w * 0.65, y + 2 * scale, x + w * 0.3, descY);
+    ctx.stroke();
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  public drawKappa(ctx: CanvasRenderingContext2D, x: number, y: number, fontSize: number, inkColor: string): number {
+    const scale = fontSize / 28;
+    const w = 9.5 * scale;
+    const topY = y - fontSize * 0.44;
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.25, topY);
+    ctx.lineTo(x + w * 0.25, y);
+    ctx.moveTo(x + w * 0.85, topY + 1 * scale);
+    ctx.lineTo(x + w * 0.30, (topY + y) * 0.55);
+    ctx.lineTo(x + w * 0.85, y);
+    ctx.stroke();
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  public drawNu(ctx: CanvasRenderingContext2D, x: number, y: number, fontSize: number, inkColor: string): number {
+    const scale = fontSize / 28;
+    const w = 9.5 * scale;
+    const topY = y - fontSize * 0.44;
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + 1.5 * scale, topY);
+    ctx.quadraticCurveTo(x + w * 0.35, y, x + w * 0.48, y);
+    ctx.lineTo(x + w * 0.88, topY + 2 * scale);
+    ctx.stroke();
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  public drawChi(ctx: CanvasRenderingContext2D, x: number, y: number, fontSize: number, inkColor: string): number {
+    const scale = fontSize / 28;
+    const w = 10 * scale;
+    const topY = y - fontSize * 0.44;
+    const descY = y + fontSize * 0.28;
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + 1.5 * scale, topY);
+    ctx.lineTo(x + w * 0.85, descY);
+    ctx.moveTo(x + w * 0.85, topY);
+    ctx.lineTo(x + 1.5 * scale, descY);
+    ctx.stroke();
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  public drawSigmaUpper(ctx: CanvasRenderingContext2D, x: number, y: number, fontSize: number, inkColor: string): number {
+    const scale = fontSize / 28;
+    const w = 13 * scale;
+    const topY = y - fontSize * 0.72;
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 1.05);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + w - 1 * scale, topY);
+    ctx.lineTo(x + 2 * scale, topY);
+    ctx.lineTo(x + w * 0.52, (topY + y) * 0.5);
+    ctx.lineTo(x + 2 * scale, y);
+    ctx.lineTo(x + w - 1 * scale, y);
+    ctx.stroke();
+    ctx.restore();
+    return w + 5 * scale;
+  }
+
+  public drawOmegaUpper(ctx: CanvasRenderingContext2D, x: number, y: number, fontSize: number, inkColor: string): number {
+    const scale = fontSize / 28;
+    const w = 14 * scale;
+    const topY = y - fontSize * 0.72;
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 1.05);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + 1 * scale, y);
+    ctx.lineTo(x + w * 0.24, y);
+    ctx.bezierCurveTo(x + 1 * scale, y - 4 * scale, x + 1 * scale, topY, x + w * 0.5, topY);
+    ctx.bezierCurveTo(x + w - 1 * scale, topY, x + w - 1 * scale, y - 4 * scale, x + w * 0.76, y);
+    ctx.lineTo(x + w - 1 * scale, y);
+    ctx.stroke();
+    ctx.restore();
+    return w + 5 * scale;
+  }
+
+  public drawPhiUpper(ctx: CanvasRenderingContext2D, x: number, y: number, fontSize: number, inkColor: string): number {
+    const scale = fontSize / 28;
+    const w = 13 * scale;
+    const topY = y - fontSize * 0.75;
+    const loopTopY = y - fontSize * 0.55;
+    const loopBotY = y - fontSize * 0.12;
+    const cx = x + w * 0.5;
+    const rx = w * 0.42;
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 1.05);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx, loopTopY);
+    ctx.bezierCurveTo(cx - rx * 1.15, loopTopY, cx - rx * 1.15, loopBotY, cx, loopBotY);
+    ctx.bezierCurveTo(cx + rx * 1.15, loopBotY, cx + rx * 1.15, loopTopY, cx, loopTopY);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx, topY);
+    ctx.lineTo(cx, y + 2 * scale);
+    ctx.stroke();
+    ctx.restore();
+    return w + 5 * scale;
+  }
+
+  public drawPsiUpper(ctx: CanvasRenderingContext2D, x: number, y: number, fontSize: number, inkColor: string): number {
+    const scale = fontSize / 28;
+    const w = 14 * scale;
+    const topY = y - fontSize * 0.75;
+    const cupTopY = y - fontSize * 0.55;
+    const cx = x + w * 0.5;
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 1.05);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + 2 * scale, cupTopY);
+    ctx.bezierCurveTo(x + 2 * scale, y + 1 * scale, x + w - 2 * scale, y + 1 * scale, x + w - 2 * scale, cupTopY);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx, topY);
+    ctx.lineTo(cx, y + 2 * scale);
+    ctx.stroke();
+    ctx.restore();
+    return w + 5 * scale;
+  }
+
+  public drawThetaUpper(ctx: CanvasRenderingContext2D, x: number, y: number, fontSize: number, inkColor: string): number {
+    const scale = fontSize / 28;
+    const w = 13 * scale;
+    const topY = y - fontSize * 0.72;
+    const cx = x + w * 0.5;
+    const cy = (topY + y) * 0.5;
+    const rx = w * 0.42;
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 1.05);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx, topY);
+    ctx.bezierCurveTo(cx - rx * 1.15, topY, cx - rx * 1.15, y, cx, y);
+    ctx.bezierCurveTo(cx + rx * 1.15, y, cx + rx * 1.15, topY, cx, topY);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx - rx * 0.75, cy);
+    ctx.lineTo(cx + rx * 0.75, cy);
+    ctx.stroke();
+    ctx.restore();
+    return w + 5 * scale;
+  }
+
+  public drawLambdaUpper(ctx: CanvasRenderingContext2D, x: number, y: number, fontSize: number, inkColor: string): number {
+    const scale = fontSize / 28;
+    const w = 12 * scale;
+    const topY = y - fontSize * 0.72;
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 1.05);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + 2 * scale, y);
+    ctx.lineTo(x + w * 0.5, topY);
+    ctx.lineTo(x + w - 1 * scale, y);
+    ctx.stroke();
+    ctx.restore();
+    return w + 5 * scale;
+  }
+
+  public drawPiUpper(ctx: CanvasRenderingContext2D, x: number, y: number, fontSize: number, inkColor: string): number {
+    const scale = fontSize / 28;
+    const w = 13 * scale;
+    const topY = y - fontSize * 0.72;
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 1.05);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + 1 * scale, topY);
+    ctx.lineTo(x + w - 1 * scale, topY);
+    ctx.moveTo(x + w * 0.28, topY);
+    ctx.lineTo(x + w * 0.28, y);
+    ctx.moveTo(x + w * 0.72, topY);
+    ctx.lineTo(x + w * 0.72, y);
+    ctx.stroke();
+    ctx.restore();
+    return w + 5 * scale;
+  }
+
+  public drawHbar(ctx: CanvasRenderingContext2D, x: number, y: number, fontSize: number, inkColor: string): number {
+    const scale = fontSize / 28;
+    const w = 10 * scale;
+    const topY = y - fontSize * 0.68;
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 0.95);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.28, topY);
+    ctx.lineTo(x + w * 0.25, y);
+    ctx.moveTo(x + w * 0.28, y - fontSize * 0.32);
+    ctx.quadraticCurveTo(x + w * 0.65, y - fontSize * 0.44, x + w * 0.82, y - fontSize * 0.25);
+    ctx.lineTo(x + w * 0.82, y);
+    ctx.moveTo(x + 0.5 * scale, topY + fontSize * 0.16);
+    ctx.lineTo(x + w * 0.55, topY + fontSize * 0.08);
+    ctx.stroke();
+    ctx.restore();
+    return w + 4 * scale;
+  }
+
+  public drawFourierF(ctx: CanvasRenderingContext2D, x: number, y: number, fontSize: number, inkColor: string): number {
+    const scale = fontSize / 28;
+    const w = 12 * scale;
+    const topY = y - fontSize * 0.72;
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = this.getBaseLineWidth(scale, 1.0);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + 2 * scale, topY + 2 * scale);
+    ctx.bezierCurveTo(x + w * 0.35, topY - 2 * scale, x + w * 0.65, topY + 2 * scale, x + w - 1 * scale, topY);
+    ctx.moveTo(x + w * 0.55, topY);
+    ctx.bezierCurveTo(x + w * 0.45, (topY + y) * 0.5, x + w * 0.35, y, x + 2 * scale, y);
+    ctx.moveTo(x + w * 0.28, (topY + y) * 0.52);
+    ctx.lineTo(x + w * 0.72, (topY + y) * 0.52);
+    ctx.stroke();
+    ctx.restore();
+    return w + 5 * scale;
+  }
+
+  /**
+   * Procedural If-and-only-if / Equivalence arrow (⇔ / <=>).
+   */
+  public drawIff(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string
+  ): number {
+    const scale = fontSize / 28;
+    const len = 22 * scale;
+    const centerY = y - fontSize * 0.35;
+    const gap = (3.2 + this.noise.random() * 1.2) * scale;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = Math.max(1.3, 1.7 * scale);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Double horizontal bars
+    ctx.beginPath();
+    ctx.moveTo(x + 4 * scale, centerY - gap * 0.5);
+    ctx.lineTo(x + len - 4 * scale, centerY - gap * 0.5);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(x + 4 * scale, centerY + gap * 0.5);
+    ctx.lineTo(x + len - 4 * scale, centerY + gap * 0.5);
+    ctx.stroke();
+
+    // Left arrowhead
+    const leftTipX = x + 1.5 * scale;
+    const wingLen = 5.5 * scale;
+    ctx.beginPath();
+    ctx.moveTo(leftTipX + wingLen, centerY - 5.0 * scale);
+    ctx.lineTo(leftTipX, centerY);
+    ctx.lineTo(leftTipX + wingLen, centerY + 5.0 * scale);
+    ctx.stroke();
+
+    // Right arrowhead
+    const rightTipX = x + len - 1.5 * scale;
+    ctx.beginPath();
+    ctx.moveTo(rightTipX - wingLen, centerY - 5.0 * scale);
+    ctx.lineTo(rightTipX, centerY);
+    ctx.lineTo(rightTipX - wingLen, centerY + 5.0 * scale);
+    ctx.stroke();
+
+    ctx.restore();
+    return len + 8 * scale;
+  }
+
+  /**
+   * Procedural Not-Element-Of (∉).
+   */
+  public drawNotElementOf(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string
+  ): number {
+    const scale = fontSize / 28;
+    const w = this.drawElementOf(ctx, x, y, fontSize, inkColor);
+    const topY = y - fontSize * 0.50;
+    const bottomY = y + fontSize * 0.08;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = Math.max(1.2, this.getBaseLineWidth(scale, 0.95));
+    ctx.lineCap = 'round';
+
+    // Organic slash across the symbol
+    const slashTilt = (this.noise.random() - 0.5) * 1.5 * scale;
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.72 + slashTilt, topY);
+    ctx.lineTo(x + w * 0.20 - slashTilt, bottomY);
+    ctx.stroke();
+    ctx.restore();
+
+    return w;
+  }
+
+  /**
+   * Procedural Asymptotically-Equal / Similar-Or-Equal (≃).
+   */
+  public drawSimeq(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string
+  ): number {
+    const scale = fontSize / 28;
+    const w = 14 * scale;
+    const cy = y - fontSize * 0.38;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = Math.max(1.3, this.getBaseLineWidth(scale, 0.95));
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Top gentle tilde
+    const h = 2.6 * scale;
+    ctx.beginPath();
+    ctx.moveTo(x + 1, cy - 2.5 * scale);
+    ctx.bezierCurveTo(
+      x + w * 0.25, cy - 2.5 * scale - h,
+      x + w * 0.35, cy - 2.5 * scale - h,
+      x + w * 0.5, cy - 2.5 * scale
+    );
+    ctx.bezierCurveTo(
+      x + w * 0.65, cy - 2.5 * scale + h,
+      x + w * 0.75, cy - 2.5 * scale + h,
+      x + w, cy - 2.5 * scale
+    );
+    ctx.stroke();
+
+    // Bottom horizontal bar
+    const barY = cy + 3.0 * scale;
+    ctx.beginPath();
+    ctx.moveTo(x + 1, barY);
+    ctx.lineTo(x + w, barY + (this.noise.random() - 0.5) * 0.8 * scale);
+    ctx.stroke();
+
+    ctx.restore();
+    return w + 6 * scale;
+  }
+
+  /**
+   * Procedural Top / T-Symbol (⊤).
+   */
+  public drawTop(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    fontSize: number,
+    inkColor: string
+  ): number {
+    const scale = fontSize / 28;
+    const w = 12 * scale;
+    const topY = y - fontSize * 0.65;
+    const botY = y - fontSize * 0.05;
+    const midX = x + w * 0.5;
+
+    ctx.save();
+    ctx.strokeStyle = inkColor;
+    ctx.lineWidth = Math.max(1.3, this.getBaseLineWidth(scale, 1.0));
+    ctx.lineCap = 'round';
+
+    // Top horizontal bar
+    ctx.beginPath();
+    ctx.moveTo(x, topY);
+    ctx.lineTo(x + w, topY + (this.noise.random() - 0.5) * 0.8 * scale);
+    ctx.stroke();
+
+    // Vertical stem down
+    ctx.beginPath();
+    ctx.moveTo(midX, topY);
+    ctx.lineTo(midX + (this.noise.random() - 0.5) * 0.8 * scale, botY);
+    ctx.stroke();
+
+    ctx.restore();
+    return w + 6 * scale;
   }
 }

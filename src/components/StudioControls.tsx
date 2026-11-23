@@ -56,6 +56,19 @@ interface StudioControlsProps {
   onOpenStudentizer?: () => void;
 }
 
+const getPersonaShortName = (name: string, id: string): string => {
+  if (id === 'rushed-medical-cursive') return '⚡ Medical Cursive';
+  if (id === 'chitesh-stem-notes') return '📘 Chitesh';
+  if (id === 'boy-stem-cursive' || id === 'boys-rushed-cursive') return '🏃 Rushed STEM';
+  if (id === 'girl-neat-cursive' || id === 'girls-neat-cursive') return '🌸 Neat Cursive';
+  if (id === 'exam-prep-rushed' || id === 'exam-prep-speed') return '⏱️ Exam Prep';
+  if (id === 'clean-lecture' || id === 'clean-engineer-print') return '📐 Engineer Print';
+  if (id === 'true-cursive-notes') return '✒️ Fluid Cursive';
+  if (id === 'palmer-business-cursive') return '📜 Palmer Cursive';
+  if (id === 'french-school-cursive') return '🇫🇷 French School';
+  return name.split("'s")[0] || name.split(' ')[0];
+};
+
 export const StudioControls: React.FC<StudioControlsProps> = ({
   appState,
   setAppState,
@@ -356,7 +369,7 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                           : 'border-[#262d42] bg-[#11151f] text-slate-300 hover:bg-[#1a2130]'
                       }`}
                     >
-                      <span>{p.name.split("'s")[0] || p.name.split(' ')[0]}</span>
+                      <span>{getPersonaShortName(p.name, p.id)}</span>
                       {isActive && <Check className="w-3 h-3 text-blue-200 shrink-0" />}
                     </button>
                   );
@@ -387,7 +400,9 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                   <BookOpen className="w-3.5 h-3.5 text-blue-400" />
                   Load STEM Assignment Preset
                 </span>
-                <span className="text-[10px] text-slate-400 font-mono">6 Built-In Assignments</span>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  {SAMPLE_ASSIGNMENTS.length} Built-In Assignments
+                </span>
               </div>
               <div className="relative">
                 <select
@@ -1867,6 +1882,7 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
                   </div>
                 </div>
                 <button
+                  aria-label="Toggle rough work column"
                   onClick={() =>
                     setAppState((p) => ({
                       ...p,
@@ -1950,7 +1966,61 @@ export const StudioControls: React.FC<StudioControlsProps> = ({
 
             {/* Pen Ink Physics */}
             <div className="bg-[#181d2a] p-3.5 rounded-xl border border-[#262d42] space-y-3">
-              <div className="text-xs font-semibold text-slate-200">Ballpoint Ink &amp; Pen Setup</div>
+              <div className="text-xs font-semibold text-slate-200">Writing Instrument &amp; Ink Setup</div>
+
+              {/* Writing Instrument Style (penStyle) */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-slate-400">Pen Instrument Type</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'ballpoint', label: '🖊️ Ballpoint' },
+                    { id: 'gel', label: '🖋️ Gel Pen' },
+                    { id: 'fountain', label: '✒️ Fountain' },
+                  ].map((style) => (
+                    <button
+                      key={style.id}
+                      onClick={() =>
+                        setAppState((p) => ({
+                          ...p,
+                          pen: { ...p.pen, penStyle: style.id as any },
+                        }))
+                      }
+                      className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium text-center transition-all ${
+                        appState.pen.penStyle === style.id
+                          ? 'border-blue-500 bg-blue-950/40 text-blue-200 ring-1 ring-blue-500 font-semibold'
+                          : 'border-[#262d42] bg-[#11151f] text-slate-300 hover:bg-[#1a2130]'
+                      }`}
+                    >
+                      {style.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Nib / Stroke Width Slider */}
+              <div className="space-y-1">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-400">Pen Nib / Stroke Width</span>
+                  <span className="text-blue-400 font-mono font-semibold">
+                    {appState.pen.strokeWidth.toFixed(2)}px
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="1.0"
+                  max="2.6"
+                  step="0.05"
+                  value={appState.pen.strokeWidth}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    setAppState((p) => ({
+                      ...p,
+                      pen: { ...p.pen, strokeWidth: val },
+                    }));
+                  }}
+                  className="w-full accent-blue-500 bg-[#11151f] h-1.5 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
 
               {/* Body Ink Color */}
               <div className="space-y-1.5">

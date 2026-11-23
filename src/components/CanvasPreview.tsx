@@ -184,6 +184,9 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
         if (isReplaying) {
           setReplayPaused((prev) => !prev);
         } else {
+          if (!writingAudio.getMuted()) {
+            writingAudio.playStrokeSound(appState.pen.penStyle, 0.001);
+          }
           setReplayBlockCount(0);
           setReplayPaused(false);
           setIsReplaying(true);
@@ -230,6 +233,7 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
     appState.paper,
     appState.handwriting.randomSeed,
     isReplaying,
+    pageEngine,
     allographs,
   ]);
 
@@ -279,32 +283,6 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
     allographs,
   ]);
 
-  // Automated batch rendering bridge for inspection & verification
-  useEffect(() => {
-    if (!currentFont || pagesData.length === 0) return;
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('autoSave') === '1') {
-      (async () => {
-        for (let i = 0; i < pagesData.length; i++) {
-          const offCanvas = document.createElement('canvas');
-          offCanvas.width = PAGE_WIDTH;
-          offCanvas.height = PAGE_HEIGHT;
-          pageEngine.renderPage(offCanvas, pagesData[i], appState, currentFont, undefined, allographs);
-          const dataUrl = offCanvas.toDataURL('image/png');
-          try {
-            await fetch('http://localhost:9999/save', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ page: i + 1, total: pagesData.length, dataUrl }),
-            });
-          } catch (e) {
-            console.error('AutoSave post failed for page', i + 1, e);
-          }
-        }
-      })();
-    }
-  }, [currentFont, pagesData.length, allographs]);
-
   const handleZoomIn = () => {
     setAppState((p) => ({ ...p, zoom: Math.min(2.0, p.zoom + 0.15) }));
   };
@@ -316,7 +294,6 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
   const handleResetZoom = () => {
     setAppState((p) => ({ ...p, zoom: 0.75 }));
   };
-
 
   const handleExportCurrentPNG = () => {
     const canvas = canvasRef.current;
@@ -364,7 +341,7 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
     a.href = url;
     a.download = `ScriptaMath_Page_${currentPageIdx + 1}.svg`;
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
   };
 
   const handleAdoptVariation = (overrides: {
@@ -493,6 +470,9 @@ export const CanvasPreview: React.FC<CanvasPreviewProps> = ({
               if (isReplaying) {
                 setIsReplaying(false);
               } else {
+                if (!writingAudio.getMuted()) {
+                  writingAudio.playStrokeSound(appState.pen.penStyle, 0.001);
+                }
                 setReplayBlockCount(0);
                 setReplayPaused(false);
                 setIsReplaying(true);

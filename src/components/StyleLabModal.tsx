@@ -213,7 +213,6 @@ export const StyleLabModal: React.FC<StyleLabModalProps> = ({
     setStrokes([]);
     currentStrokeRef.current = [];
     setMetrics(null);
-    redrawCanvas();
   };
 
   const handleUndo = () => {

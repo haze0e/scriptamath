@@ -69,6 +69,7 @@ export class PageEngine {
   private currentRightMargin: number = RIGHT_MARGIN;
   private currentLineObstacles: Array<{ x1: number; x2: number }> = [];
   private prevLineObstacles: Array<{ x1: number; x2: number }> = [];
+  private mathNestingLevel = 0;
 
   constructor(seed: number) {
     this.noise = new SeededNoise(seed);
@@ -257,12 +258,13 @@ export class PageEngine {
         : 0;
 
       let blockHeight = BASE_LINE_HEIGHT;
+      const wrapEfficiency = 0.85;
 
       if (block.type === 'heading') {
         const hSize = (block.level === 1 ? fontSize * 1.3 : fontSize * 1.15) * phaseScale;
         const hSpan = this.getTokensVerticalSpan(block.tokens, hSize);
         const hWidth = estimateWidth(block.tokens, hSize);
-        const hLines = Math.max(1, Math.ceil(hWidth / Math.max(200, availableWidth - 20)));
+        const hLines = Math.max(1, Math.ceil(hWidth / Math.max(200, (availableWidth - 20) * wrapEfficiency)));
         const rawHLinePitch = Math.max(BASE_LINE_HEIGHT, hSpan.ascent + hSpan.descent + 10);
         const hLinePitch = shouldSnapToRule
           ? Math.ceil(rawHLinePitch / BASE_LINE_HEIGHT) * BASE_LINE_HEIGHT
@@ -271,7 +273,7 @@ export class PageEngine {
           Math.max((hLines - 1) * Math.max(BASE_LINE_HEIGHT * 1.5, hLinePitch + 14) + hLinePitch + 14, BASE_LINE_HEIGHT * (block.level === 1 ? 1.5 : 1.2));
       } else if (block.type === 'math-step') {
         const mWidth = estimateWidth(block.tokens, effectiveSize);
-        const mLines = Math.max(1, Math.ceil(mWidth / Math.max(200, availableWidth - 70)));
+        const mLines = Math.max(1, Math.ceil(mWidth / Math.max(200, (availableWidth - 70) * wrapEfficiency)));
         const rawStepH = Math.max(BASE_LINE_HEIGHT, span.ascent + span.descent + (hasBoxed ? 16 : 10));
         const stepH = shouldSnapToRule
           ? Math.ceil(rawStepH / BASE_LINE_HEIGHT) * BASE_LINE_HEIGHT
@@ -280,20 +282,20 @@ export class PageEngine {
         const mult = hasMatrix ? 1.26 : hasBoxed ? 1.20 : 1.10;
         blockHeight = topClearance + (mLines - 1) * Math.max(BASE_LINE_HEIGHT * 1.5, stepH + 14) + stepH * mult;
       } else if (block.type === 'boxed-final') {
-        blockHeight = topClearance + Math.max(BASE_LINE_HEIGHT * 1.8, span.ascent + span.descent + 24 + BASE_LINE_HEIGHT * 0.6);
+        blockHeight = topClearance + Math.max(BASE_LINE_HEIGHT * 1.3, span.ascent + span.descent + 16 + BASE_LINE_HEIGHT * 0.3);
       } else if (block.type === 'table') {
         if (block.tableData) {
           const { headers, rows, columnCount } = block.tableData;
           const colPad = columnCount >= 10 ? 12 : columnCount >= 7 ? 18 : 28;
           const minColW = columnCount >= 10 ? 36 : columnCount >= 7 ? 45 : 55;
-          let totalW = columnCount * minColW;
+          let totalW = 0;
           for (let c = 0; c < columnCount; c++) {
             let maxW = estimateWidth(headers[c] || [], effectiveSize * 0.84);
             for (let r = 0; r < rows.length; r++) {
               const cw = estimateWidth(rows[r][c] || [], effectiveSize * 0.80);
               if (cw > maxW) maxW = cw;
             }
-            totalW += maxW + colPad - minColW;
+            totalW += Math.max(minColW, maxW + colPad);
           }
           const tScale = totalW > availableWidth ? availableWidth / totalW : 1.0;
           const cFontScale = Math.max(0.50, Math.min(1.0, tScale));
@@ -330,7 +332,7 @@ export class PageEngine {
         // paragraph or margin-item
         const prefixW = block.prefix ? block.prefix.length * effectiveSize * 0.55 + 24 : 0;
         const pWidth = estimateWidth(block.tokens, effectiveSize);
-        const pLines = Math.max(1, Math.ceil((pWidth + prefixW) / Math.max(200, availableWidth - 20)));
+        const pLines = Math.max(1, Math.ceil((pWidth + prefixW) / Math.max(200, (availableWidth - 20) * wrapEfficiency)));
         const rawPitch = Math.max(BASE_LINE_HEIGHT, span.ascent + span.descent + 12);
         const trueLineH = shouldSnapToRule
           ? Math.ceil(rawPitch / BASE_LINE_HEIGHT) * BASE_LINE_HEIGHT
@@ -447,7 +449,9 @@ export class PageEngine {
       paper,
       pageData.pageNumber - 1,
       BASE_LINE_HEIGHT,
-      TOP_MARGIN
+      TOP_MARGIN,
+      pen.bodyColorHex,
+      handwriting.fontFamily
     );
 
     // 2. Prepare transparent offscreen text canvas for crisp rendering and back-page bleed
@@ -878,7 +882,8 @@ export class PageEngine {
           headingInkColor,
           lineProgress,
           blockHandwriting,
-          textRoughCanvas
+          textRoughCanvas,
+          false
         );
         const renderedWidth = seqResult.width;
 
@@ -1213,12 +1218,17 @@ export class PageEngine {
       }
     }
 
-    // 4. Back-Page Bleed (Ghosting through sheet with per-page registration jitter)
-    if (paper.inkBleed > 0) {
-      this.inkAndScan.drawBackPageBleed(ctx, textCanvas, PAGE_WIDTH, PAGE_HEIGHT, paper.inkBleed, pageData.pageNumber - 1);
+    const pageIdx = pageData.pageNumber - 1;
+
+    // Draw marginAnnotation in the margin gutter on Page 1 onto textCanvas
+    if (paper.marginAnnotation && pageData.pageNumber === 1) {
+      const textCtx = textCanvas.getContext('2d');
+      if (textCtx) {
+        this.drawMarginAnnotationOnCanvas(textCtx, font, paper.marginAnnotation, handwriting, pen, paper);
+      }
     }
 
-    // 4.5 Subtle Cellulose Ink Feathering
+    // 4. Subtle Cellulose Ink Feathering
     if (paper.showPaperTexture && maxBlocks === undefined) {
       this.inkAndScan.applyCelluloseInkFeathering(textCanvas);
     }
@@ -1226,12 +1236,24 @@ export class PageEngine {
     // 5. Composite primary student handwriting layer onto paper
     ctx.drawImage(textCanvas, 0, 0);
 
-    // 5.5 Optional Procedural Coffee Mug Ring Stain (on front sheet)
+    // 5.1 Apply Scanner Filter FIRST on paper + ink (whitening paper & boosting ink contrast before overlays)
+    if (paper.scanFilter && paper.scanFilter !== 'original') {
+      const awbJitter = (Math.sin(pageIdx * 2.7) * 0.04) + (this.noise.random() - 0.5) * 0.03;
+      const effectiveWarmth = Math.max(0, Math.min(1.0, (paper.paperWarmth ?? 0) + awbJitter));
+      this.inkAndScan.applyScannerFilter(ctx, PAGE_WIDTH, PAGE_HEIGHT, paper.scanFilter, effectiveWarmth, pageIdx, paper.template);
+    }
+
+    // 5.2 Back-Page Bleed (Ghosting through sheet - overlaid onto scanned paper so CamScanner doesn't erase it)
+    if (paper.inkBleed > 0) {
+      this.inkAndScan.drawBackPageBleed(ctx, textCanvas, PAGE_WIDTH, PAGE_HEIGHT, paper.inkBleed, pageIdx);
+    }
+
+    // 5.3 Optional Procedural Coffee Mug Ring Stain (on front sheet)
     if (paper.showCoffeeStain && pageData.pageNumber === 1) {
       this.inkAndScan.drawCoffeeStain(ctx, PAGE_WIDTH, PAGE_HEIGHT, handwriting.randomSeed, 1.0);
     }
 
-    // BUG-14 FIX: Draw Sticky Note directly onto the canvas on Page 1 so PNG/SVG/PDF/ZIP exports include it
+    // 5.4 Sticky Note directly onto the canvas on Page 1
     if (paper.showStickyNote && pageData.pageNumber === 1) {
       this.drawStickyNoteOnCanvas(
         ctx,
@@ -1242,8 +1264,8 @@ export class PageEngine {
       );
     }
 
-    // 6. Apply Camera / CamScanner Scan Post-Processing Filters (with per-page organic camera tilt, lighting & shadow jitter)
-    this.inkAndScan.applyScanPostProcessing(ctx, PAGE_WIDTH, PAGE_HEIGHT, paper, pageData.pageNumber - 1);
+    // 6. Apply Ambient Lighting, Smartphone Shadow/Vignette, Keystone Tilt, Lens Softness & ISO Grain
+    this.inkAndScan.applyScanPostProcessing(ctx, PAGE_WIDTH, PAGE_HEIGHT, paper, pageIdx, true);
   }
 
   private drawStickyNoteOnCanvas(
@@ -1306,6 +1328,43 @@ export class PageEngine {
     ctx.restore();
   }
 
+  private drawMarginAnnotationOnCanvas(
+    ctx: CanvasRenderingContext2D,
+    font: opentype.Font,
+    text: string,
+    handwriting: AppState['handwriting'],
+    pen: AppState['pen'],
+    paper: AppState['paper']
+  ) {
+    if (!text) return;
+    ctx.save();
+    let baseAnnotX = 72;
+    if (paper.spiralHoles) {
+      baseAnnotX = 112;
+    } else if (paper.template === 'unruled-bond') {
+      baseAnnotX = PAGE_WIDTH - 65;
+    }
+    const annotX = baseAnnotX + (this.noise.random() - 0.5) * 6;
+    const annotY = PAGE_HEIGHT * 0.48 + (this.noise.random() - 0.5) * 40;
+    ctx.translate(annotX, annotY);
+    ctx.rotate(-Math.PI / 2);
+    const annotColor = pen.bodyColorHex || '#1d3557';
+    ctx.globalAlpha = 0.72;
+    this.renderWordOrChars(
+      ctx,
+      font,
+      text,
+      0,
+      0,
+      14,
+      annotColor,
+      0.1,
+      { ...handwriting, cursiveMode: 'print' },
+      undefined as any
+    );
+    ctx.restore();
+  }
+
   private getTokenVerticalSpan(token: MathToken, fontSize: number): { ascent: number; descent: number } {
     if (token.type === 'fraction') {
       const fracFontSize = fontSize * 0.84;
@@ -1322,7 +1381,6 @@ export class PageEngine {
     }
     if (token.type === 'matrix') {
       let totalH = 0;
-      let firstRowAscent = fontSize * 0.85;
       for (let r = 0; r < token.cells.length; r++) {
         const row = token.cells[r];
         let maxRowAsc = fontSize * 0.68;
@@ -1332,28 +1390,53 @@ export class PageEngine {
           maxRowAsc = Math.max(maxRowAsc, s.ascent);
           maxRowDesc = Math.max(maxRowDesc, s.descent);
         }
-        if (r === 0) firstRowAscent = maxRowAsc + 4;
         totalH += Math.max(fontSize * 1.4, maxRowAsc + maxRowDesc + 14);
       }
-      if (token.bracket === 'p' && token.cells.length === 2 && (token.cells[0]?.length || 0) <= 1) {
-        return {
-          ascent: totalH * 0.5 + fontSize * 0.35,
-          descent: totalH * 0.5 - fontSize * 0.35 + 4,
-        };
-      }
       return {
-        ascent: firstRowAscent,
-        descent: Math.max(fontSize * 0.4, totalH - firstRowAscent + 4),
+        ascent: totalH * 0.5 + fontSize * 0.35 + 2,
+        descent: totalH * 0.5 - fontSize * 0.35 + 4,
       };
     }
     if (token.type === 'big-op') {
       return { ascent: fontSize * 1.05, descent: fontSize * 0.55 };
     }
     if (token.type === 'script') {
-      return {
-        ascent: token.sup ? fontSize * 0.95 : fontSize * 0.75,
-        descent: token.sub ? fontSize * 0.45 : fontSize * 0.20,
-      };
+      const scriptFontSize = fontSize * 0.72;
+      const isUnderBase =
+        typeof token.base === 'string' &&
+        (token.base === 'lim' ||
+          token.base === 'sup' ||
+          token.base === 'inf' ||
+          token.base === 'max' ||
+          token.base === 'min' ||
+          token.base === 'limsup' ||
+          token.base === 'liminf');
+
+      let baseAscent = fontSize * 0.75;
+      let baseDescent = fontSize * 0.22;
+      if (Array.isArray(token.base)) {
+        const baseSpan = this.getTokensVerticalSpan(token.base, fontSize);
+        baseAscent = baseSpan.ascent;
+        baseDescent = baseSpan.descent;
+      }
+      let totalAscent = baseAscent;
+      let totalDescent = baseDescent;
+
+      if (token.sup && token.sup.length > 0) {
+        const supSpan = this.getTokensVerticalSpan(token.sup, scriptFontSize);
+        const supTotalAscent = isUnderBase
+          ? fontSize * 0.85 + supSpan.ascent
+          : fontSize * 0.44 + supSpan.descent + supSpan.ascent;
+        totalAscent = Math.max(totalAscent, supTotalAscent);
+      }
+      if (token.sub && token.sub.length > 0) {
+        const subSpan = this.getTokensVerticalSpan(token.sub, scriptFontSize);
+        const subTotalDescent = isUnderBase
+          ? fontSize * 0.38 + subSpan.ascent + subSpan.descent
+          : fontSize * 0.22 + subSpan.descent;
+        totalDescent = Math.max(totalDescent, subTotalDescent);
+      }
+      return { ascent: totalAscent, descent: totalDescent };
     }
     if (token.type === 'root') {
       const radSpan = this.getTokensVerticalSpan(token.content, fontSize);
@@ -1576,8 +1659,8 @@ export class PageEngine {
     this.annotateDelimitersWithContentSpan(tokens, fontSize);
     const span = this.getTokensVerticalSpan(tokens, fontSize);
     let currX = startX;
-    // Push baseline down if numerators or ascenders are tall so they don't collide with the line above
-    let currY = startY + (span.ascent > BASE_LINE_HEIGHT * 0.80 ? span.ascent - BASE_LINE_HEIGHT * 0.75 : 0);
+    // Base Y is already cleared by renderPage() top-clearance logic
+    let currY = startY;
     const shouldSnapToRule =
       (handwriting.snapToRuledLines ?? true) &&
       (this.currentPaper?.template === 'indian-ruled' || this.currentPaper?.template === 'exam-booklet');
@@ -1600,7 +1683,8 @@ export class PageEngine {
       if (token.type === 'text') {
         // Split text token into words
         const words = token.text.split(/(\s+)/);
-        for (const w of words) {
+        for (let wIdx = 0; wIdx < words.length; wIdx++) {
+          const w = words[wIdx];
           if (!w) continue;
           if (/^\s+$/.test(w)) {
             const wordSpacingMult = handwriting.wordSpacing ?? 1.0;
@@ -1608,7 +1692,7 @@ export class PageEngine {
             continue;
           }
 
-          const wWidth = this.measureWord(font, w, fontSize);
+          const wWidth = this.measureWord(font, w, fontSize, handwriting.letterSpacing ?? 0);
 
           // 2-Line Fraction Ducking: check if word ducks under hanging denominator from previous line
           const isUnderObstacle = this.prevLineObstacles.some(
@@ -1624,7 +1708,7 @@ export class PageEngine {
           const wordY = currY + uphillY + (isUnderObstacle ? 8.0 : 0);
 
           // Organic mistake cross-out (clean horizontal pen scratch with plausible typo)
-          if (handwriting.scratchOutRate > 0 && this.noise.random() < handwriting.scratchOutRate * 0.25 && w.length >= 4) {
+          if (handwriting.scratchOutRate > 0 && /^[A-Za-z]+$/.test(w) && this.noise.random() < handwriting.scratchOutRate * 0.25 && w.length >= 4) {
             const typo = this.generatePlausibleTypo(w);
             const typoW = this.renderWordOrChars(
               ctx,
@@ -1656,6 +1740,7 @@ export class PageEngine {
           const estInsertedW = wWidth * insertedScale;
           if (
             caretRate > 0 &&
+            /^[A-Za-z]+$/.test(w) &&
             w.length >= 2 &&
             w.length <= 5 &&
             !isUnderObstacle &&
@@ -1705,10 +1790,10 @@ export class PageEngine {
               lineProgress,
               handwriting,
               roughCanvas,
-              wristState
+              undefined
             );
             ctx.restore();
-            currX += squeezedW * 0.85;
+            currX += squeezedW;
           } else if (currX + wWidth > this.currentRightMargin + (this.noise.random() - 0.5) * 16) {
             // Wrap to next line
             this.prevLineObstacles = this.currentLineObstacles;
@@ -1720,11 +1805,13 @@ export class PageEngine {
             const wrapUnder = this.prevLineObstacles.some(
               (obs) => Math.max(currX, obs.x1) < Math.min(currX + wWidth, obs.x2)
             );
-            const drawnW = this.renderWordOrChars(ctx, font, w, currX, currY + (wrapUnder ? 8.0 : 0), fontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
-            currX += Math.max(wWidth, drawnW);
+            const isCold = (i === 0 && wIdx === 0);
+            const drawnW = this.renderWordOrChars(ctx, font, w, currX, currY + (wrapUnder ? 8.0 : 0), fontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState, undefined, false, isCold);
+            currX += drawnW;
           } else {
-            const drawnW = this.renderWordOrChars(ctx, font, w, currX, wordY, fontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
-            currX += Math.max(wWidth, drawnW);
+            const isCold = (i === 0 && wIdx === 0);
+            const drawnW = this.renderWordOrChars(ctx, font, w, currX, wordY, fontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState, undefined, false, isCold);
+            currX += drawnW;
           }
         }
         continue;
@@ -1758,11 +1845,20 @@ export class PageEngine {
         scaleRatio = Math.max(0.65, availWidth / tokenWidth);
       }
 
+      const isUnruled = this.currentPaper?.template === 'unruled-bond';
+      const lineSlopeDeg = isUnruled
+        ? (Math.abs(this.noise.noise1D(currY * 0.025)) * 1.1) + 0.25
+        : (this.noise.noise1D(currY * 0.03) * 0.3);
+      const lineSlopeRad = (lineSlopeDeg * Math.PI) / 180;
+      const tokDeltaX = currX - startX;
+      const tokUphillY = isUnruled ? -Math.tan(lineSlopeRad) * tokDeltaX : 0;
+      const tokY = currY + tokUphillY + (isTokUnder ? 8.0 : 0);
+
       if (scaleRatio < 1.0) {
         ctx.save();
-        ctx.translate(currX, currY + (isTokUnder ? 8.0 : 0));
+        ctx.translate(currX, tokY);
         ctx.scale(scaleRatio, scaleRatio);
-        ctx.translate(-currX, -(currY + (isTokUnder ? 8.0 : 0)));
+        ctx.translate(-currX, -tokY);
       }
 
       currX += this.renderSingleToken(
@@ -1770,7 +1866,7 @@ export class PageEngine {
         font,
         token,
         currX,
-        currY + (isTokUnder ? 8.0 : 0),
+        tokY,
         fontSize,
         inkColor,
         lineProgress,
@@ -1800,7 +1896,8 @@ export class PageEngine {
     inkColor: string,
     lineProgress: number,
     handwriting: AppState['handwriting'],
-    roughCanvas: ReturnType<typeof rough.canvas>
+    roughCanvas: ReturnType<typeof rough.canvas>,
+    inMathMode = true
   ): { width: number; height: number; lines: Array<{ y: number; width: number; height: number }> } {
     let currX = startX;
     let currY = baseY;
@@ -1924,7 +2021,8 @@ export class PageEngine {
         lineProgress,
         handwriting,
         roughCanvas,
-        wristState
+        wristState,
+        inMathMode
       ) * scaleRatio;
 
       if (scaleRatio < 1.0) {
@@ -1972,7 +2070,8 @@ export class PageEngine {
     lineProgress: number,
     handwriting: AppState['handwriting'],
     roughCanvas: ReturnType<typeof rough.canvas>,
-    wristState?: WristClusterState
+    wristState?: WristClusterState,
+    inMathMode = true
   ): number {
     if (token.type === 'space') {
       const wordSpacingMult = handwriting.wordSpacing ?? 1.0;
@@ -1980,10 +2079,11 @@ export class PageEngine {
     }
 
     if (token.type === 'text') {
-      const isIsolatedVar = token.text.length === 1 && /^[a-zA-Z]$/.test(token.text) && !token.isFunction;
+      const isText = (token as any).isText === true;
+      const isMath = inMathMode && !isText;
+      const isIsolatedVar = isMath && token.text.length === 1 && /^[a-zA-Z]$/.test(token.text) && !token.isFunction;
       const varFontSize = isIsolatedVar ? fontSize * 1.10 : fontSize;
       const varSlant = isIsolatedVar ? 5.5 : undefined;
-      const isMath = isIsolatedVar;
 
       const w = this.renderWordOrChars(
         ctx,
@@ -1998,7 +2098,9 @@ export class PageEngine {
         roughCanvas,
         wristState,
         varSlant,
-        isMath
+        isMath,
+        false,
+        Boolean(token.isFunction)
       );
       return w + (isIsolatedVar ? 3.0 : 0);
     }
@@ -2156,6 +2258,21 @@ export class PageEngine {
     if (char === '{' || char === '}') {
       return this.mathRenderer.drawBrace(ctx, x, topY, bottomY, char === '{', inkColor, fontSize);
     }
+    if (char === '⟨' || char === '⟩') {
+      return this.mathRenderer.drawAngleBracket(ctx, x, topY, bottomY, char === '⟨', inkColor, fontSize);
+    }
+    if (char === '⌊') {
+      return this.mathRenderer.drawFloorCeil(ctx, x, topY, bottomY, 'floor-left', inkColor, fontSize);
+    }
+    if (char === '⌋') {
+      return this.mathRenderer.drawFloorCeil(ctx, x, topY, bottomY, 'floor-right', inkColor, fontSize);
+    }
+    if (char === '⌈') {
+      return this.mathRenderer.drawFloorCeil(ctx, x, topY, bottomY, 'ceil-left', inkColor, fontSize);
+    }
+    if (char === '⌉') {
+      return this.mathRenderer.drawFloorCeil(ctx, x, topY, bottomY, 'ceil-right', inkColor, fontSize);
+    }
     if (char === '|') {
       if (isBig) {
         const evalTopY = y - fontSize * 1.15;
@@ -2194,7 +2311,9 @@ export class PageEngine {
     if (symbol === '→') return this.mathRenderer.drawArrow(ctx, x, y, fontSize, inkColor, false);
     if (symbol === '∴') return this.mathRenderer.drawTherefore(ctx, x, y, fontSize, inkColor);
     if (symbol === '∵') return this.mathRenderer.drawBecause(ctx, x, y, fontSize, inkColor);
-    if (symbol === '\\int') return this.mathRenderer.drawIntegral(ctx, x, y, fontSize, inkColor);
+    if (symbol === '\\int' || symbol === '\\iint' || symbol === '\\iiint' || symbol === '\\oint') {
+      return this.mathRenderer.drawIntegral(ctx, x, y, fontSize, inkColor, 1, symbol as any);
+    }
     if (symbol === '\\sum') return this.mathRenderer.drawSummation(ctx, x, y, fontSize, inkColor);
     if (symbol === '\\prod') return this.mathRenderer.drawProduct(ctx, x, y, fontSize, inkColor);
     if (symbol === '≠') return this.mathRenderer.drawNotEqual(ctx, x, y, fontSize, inkColor);
@@ -2219,7 +2338,11 @@ export class PageEngine {
     if (symbol === 'σ' || symbol === '\\sigma') return this.mathRenderer.drawSigma(ctx, x, y, fontSize, inkColor);
     if (symbol === '\\cdots') return this.mathRenderer.drawEllipsis(ctx, x, y, fontSize, inkColor, true);
     if (symbol === '\\dots' || symbol === '\\ldots' || symbol === '...') return this.mathRenderer.drawEllipsis(ctx, x, y, fontSize, inkColor, false);
-    if (symbol === '∂') return this.mathRenderer.drawPartial(ctx, x, y, fontSize, inkColor);
+    if (symbol === '∂' || symbol === '\\partial') return this.mathRenderer.drawPartial(ctx, x, y, fontSize, inkColor);
+    if (symbol === '⇔' || symbol === '\\iff' || symbol === '\\Leftrightarrow') return this.mathRenderer.drawIff(ctx, x, y, fontSize, inkColor);
+    if (symbol === '∉' || symbol === '\\notin') return this.mathRenderer.drawNotElementOf(ctx, x, y, fontSize, inkColor);
+    if (symbol === '≃' || symbol === '\\simeq') return this.mathRenderer.drawSimeq(ctx, x, y, fontSize, inkColor);
+    if (symbol === '⊤' || symbol === '\\top') return this.mathRenderer.drawTop(ctx, x, y, fontSize, inkColor);
     if (symbol === '∞') return this.mathRenderer.drawInfinity(ctx, x, y, fontSize, inkColor);
     if (symbol === 'Δ') return this.mathRenderer.drawDelta(ctx, x, y, fontSize, inkColor);
     if (symbol === '∇') return this.mathRenderer.drawNabla(ctx, x, y, fontSize, inkColor);
@@ -2246,6 +2369,25 @@ export class PageEngine {
     if (symbol === '¬' || symbol === '\\neg') return this.mathRenderer.drawNeg(ctx, x, y, fontSize, inkColor);
     if (symbol === '∼' || symbol === '~' || symbol === '\\sim') return this.mathRenderer.drawSim(ctx, x, y, fontSize, inkColor);
     if (symbol === 'Γ' || symbol === '\\Gamma') return this.mathRenderer.drawGamma(ctx, x, y, fontSize, inkColor);
+    if (symbol === 'ξ' || symbol === '\\xi') return this.mathRenderer.drawXi(ctx, x, y, fontSize, inkColor);
+    if (symbol === 'ε' || symbol === '\\epsilon' || symbol === '\\varepsilon') return this.mathRenderer.drawEpsilon(ctx, x, y, fontSize, inkColor);
+    if (symbol === 'γ' || symbol === '\\gamma') return this.mathRenderer.drawGammaLower(ctx, x, y, fontSize, inkColor);
+    if (symbol === 'ρ' || symbol === '\\rho') return this.mathRenderer.drawRho(ctx, x, y, fontSize, inkColor);
+    if (symbol === 'η' || symbol === '\\eta') return this.mathRenderer.drawEta(ctx, x, y, fontSize, inkColor);
+    if (symbol === 'ψ' || symbol === '\\psi') return this.mathRenderer.drawPsi(ctx, x, y, fontSize, inkColor);
+    if (symbol === 'ζ' || symbol === '\\zeta') return this.mathRenderer.drawZeta(ctx, x, y, fontSize, inkColor);
+    if (symbol === 'κ' || symbol === '\\kappa') return this.mathRenderer.drawKappa(ctx, x, y, fontSize, inkColor);
+    if (symbol === 'ν' || symbol === '\\nu') return this.mathRenderer.drawNu(ctx, x, y, fontSize, inkColor);
+    if (symbol === 'χ' || symbol === '\\chi') return this.mathRenderer.drawChi(ctx, x, y, fontSize, inkColor);
+    if (symbol === 'Σ' || symbol === '\\Sigma') return this.mathRenderer.drawSigmaUpper(ctx, x, y, fontSize, inkColor);
+    if (symbol === 'Ω' || symbol === '\\Omega') return this.mathRenderer.drawOmegaUpper(ctx, x, y, fontSize, inkColor);
+    if (symbol === 'Φ' || symbol === '\\Phi') return this.mathRenderer.drawPhiUpper(ctx, x, y, fontSize, inkColor);
+    if (symbol === 'Ψ' || symbol === '\\Psi') return this.mathRenderer.drawPsiUpper(ctx, x, y, fontSize, inkColor);
+    if (symbol === 'Θ' || symbol === '\\Theta') return this.mathRenderer.drawThetaUpper(ctx, x, y, fontSize, inkColor);
+    if (symbol === 'Λ' || symbol === '\\Lambda') return this.mathRenderer.drawLambdaUpper(ctx, x, y, fontSize, inkColor);
+    if (symbol === 'Π' || symbol === '\\Pi') return this.mathRenderer.drawPiUpper(ctx, x, y, fontSize, inkColor);
+    if (symbol === 'ℏ' || symbol === '\\hbar') return this.mathRenderer.drawHbar(ctx, x, y, fontSize, inkColor);
+    if (symbol === 'ℱ' || symbol === '\\mathcal{F}') return this.mathRenderer.drawFourierF(ctx, x, y, fontSize, inkColor);
     if (symbol === '/') {
       const scale = fontSize / 28;
       const w = 10 * scale;
@@ -2285,7 +2427,9 @@ export class PageEngine {
     const barPadding = Math.max(7, fracFontSize * 0.28);
     const totalBarWidth = contentMaxW + barPadding * 2;
 
-    this.currentLineObstacles.push({ x1: x - 2, x2: x + totalBarWidth + 6 });
+    if (this.mathNestingLevel === 0) {
+      this.currentLineObstacles.push({ x1: x - 2, x2: x + totalBarWidth + 6 });
+    }
 
     // Center numerator and denominator over/under the fraction content area
     // with subtle organic student tremor (+-1.2px)
@@ -2312,23 +2456,30 @@ export class PageEngine {
     const numY = barY - numDescent - barTopClearance;
     const denY = barY + denAscent + barBottomClearance;
 
-    let cx = numX;
-    for (const t of numerator) {
-      cx += this.renderSingleToken(ctx, font, t, cx, numY, fracFontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
-    }
-    const actualNumRight = cx - x;
+    let actualNumRight = 0;
+    let actualDenRight = 0;
+    this.mathNestingLevel++;
+    try {
+      let cx = numX;
+      for (const t of numerator) {
+        cx += this.renderSingleToken(ctx, font, t, cx, numY, fracFontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
+      }
+      actualNumRight = cx - x;
 
-    const actualBarWidth = Math.max(totalBarWidth, actualNumRight + barPadding * 0.5);
-    this.mathRenderer.drawFractionBar(ctx, roughCanvas, x, barY, actualBarWidth, fontSize, inkColor);
-
-    cx = denX;
-    for (const t of denominator) {
-      cx += this.renderSingleToken(ctx, font, t, cx, denY, fracFontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
+      cx = denX;
+      for (const t of denominator) {
+        cx += this.renderSingleToken(ctx, font, t, cx, denY, fracFontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
+      }
+      actualDenRight = cx - x;
+    } finally {
+      this.mathNestingLevel--;
     }
-    const actualDenRight = cx - x;
+
+    const finalBarWidth = Math.max(totalBarWidth, actualNumRight + barPadding * 0.5, actualDenRight + barPadding * 0.5);
+    this.mathRenderer.drawFractionBar(ctx, roughCanvas, x, barY, finalBarWidth, fontSize, inkColor);
 
     // Always advance past the furthest drawn pixel so subsequent tokens NEVER collide!
-    return Math.max(actualBarWidth, actualNumRight, actualDenRight) + 8;
+    return Math.max(finalBarWidth, actualNumRight, actualDenRight) + 8;
   }
 
   /**
@@ -2350,41 +2501,75 @@ export class PageEngine {
     wristState?: WristClusterState,
     isBigDelimiter?: boolean
   ): number {
-    let currX = x;
-    const isLim =
-      typeof base === 'string' &&
-      (base === 'lim' ||
-        base === 'sup' ||
-        base === 'inf' ||
-        base === 'max' ||
-        base === 'min' ||
-        base === 'limsup' ||
-        base === 'liminf');
-    let baseWidth = 0;
+    this.mathNestingLevel++;
+    try {
+      let currX = x;
+      const isLim =
+        typeof base === 'string' &&
+        (base === 'lim' ||
+          base === 'sup' ||
+          base === 'inf' ||
+          base === 'max' ||
+          base === 'min' ||
+          base === 'limsup' ||
+          base === 'liminf');
 
-    // Draw base
-    if (typeof base === 'string') {
-      if (base === '') {
-        // Empty base: attached directly to delimiter
-        baseWidth = 0;
-      } else if (isLim) {
-        baseWidth = this.renderWordOrChars(ctx, font, base, currX, y, fontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
-        currX += baseWidth;
-      } else if (base === 'Δ') {
-        baseWidth = this.mathRenderer.drawDelta(ctx, currX, y, fontSize, inkColor);
-        currX += baseWidth;
-      } else if (base === '∇') {
-        baseWidth = this.mathRenderer.drawNabla(ctx, currX, y, fontSize, inkColor);
-        currX += baseWidth;
-      } else if (base === 'ℒ') {
-        baseWidth = this.mathRenderer.drawLaplaceL(ctx, currX, y, fontSize, inkColor);
-        currX += baseWidth;
-      } else {
-        const isIsolated = base.length === 1 && /^[a-zA-Z]$/.test(base);
-        baseWidth = this.renderWordOrChars(ctx, font, base, currX, y, fontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState, undefined, isIsolated);
-        currX += baseWidth;
+      if (isLim) {
+        const scriptFontSize = fontSize * 0.70;
+        const subWidth = sub && sub.length > 0 ? this.estimateTokensWidth(font, sub, scriptFontSize) : 0;
+        const estBaseWidth = this.measureWord(font, base as string, fontSize);
+        const totalGroupWidth = Math.max(estBaseWidth, subWidth);
+        const baseX = x + Math.max(0, (totalGroupWidth - estBaseWidth) * 0.5);
+
+        const drawnBaseWidth = this.renderWordOrChars(ctx, font, base as string, baseX, y, fontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
+        const actualBaseWidth = Math.max(drawnBaseWidth, estBaseWidth);
+        const finalGroupWidth = Math.max(actualBaseWidth, subWidth);
+
+        if (sub && sub.length > 0) {
+          const subX = x + Math.max(0, (finalGroupWidth - subWidth) * 0.5) + (this.noise.random() - 0.5) * 1.5;
+          const subY = y + fontSize * 0.38;
+          let sx = subX;
+          for (const t of sub) {
+            sx += this.renderSingleToken(ctx, font, t, sx, subY, scriptFontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
+          }
+        }
+        if (sup && sup.length > 0) {
+          const supWidth = this.estimateTokensWidth(font, sup, scriptFontSize);
+          const supX = x + Math.max(0, (finalGroupWidth - supWidth) * 0.5);
+          const supY = y - fontSize * 0.85;
+          let ux = supX;
+          for (const t of sup) {
+            ux += this.renderSingleToken(ctx, font, t, ux, supY, scriptFontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
+          }
+        }
+        return finalGroupWidth + 4;
       }
-    } else {
+
+      let baseWidth = 0;
+
+      // Draw base
+      if (typeof base === 'string') {
+        if (base === '') {
+          // Empty base: attached directly to delimiter
+          baseWidth = 0;
+        } else if (
+          base.startsWith('\\') ||
+          base === 'Δ' || base === '∇' || base === 'ℒ' || base === '∂' ||
+          base === '⇔' || base === '∉' || base === '≃' || base === '⊤' ||
+          base === 'Γ' || base === 'ξ' || base === 'ε' || base === 'γ' ||
+          base === 'ρ' || base === 'η' || base === 'ψ' || base === 'ζ' ||
+          base === 'κ' || base === 'ν' || base === 'χ' || base === 'Σ' ||
+          base === 'Ω' || base === 'Φ' || base === 'Ψ' || base === 'Θ' ||
+          base === 'Λ' || base === 'Π' || base === 'ℏ' || base === 'ℱ'
+        ) {
+          baseWidth = this.renderMathOperator(ctx, font, base, currX, y, fontSize, inkColor, lineProgress, handwriting, roughCanvas);
+          currX += baseWidth;
+        } else {
+          const isIsolated = base.length === 1 && /^[a-zA-Z]$/.test(base);
+          baseWidth = this.renderWordOrChars(ctx, font, base, currX, y, fontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState, undefined, isIsolated);
+          currX += baseWidth;
+        }
+      } else {
       for (const t of base) {
         currX += this.renderSingleToken(ctx, font, t, currX, y, fontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
       }
@@ -2428,34 +2613,117 @@ export class PageEngine {
       return baseWidth;
     }
 
-    const isDelimiterScript = typeof base === 'string' && base === '' && Boolean(isBigDelimiter);
-
-    // Special case for \lim: subscript is centered directly underneath 'lim'
-    if (isLim && sub && sub.length > 0) {
-      const subWidth = this.estimateTokensWidth(font, sub, scriptFontSize);
-      const subX = x + Math.max(0, (baseWidth - subWidth) * 0.5) + (this.noise.random() - 0.5) * 1.5;
-      const subY = y + fontSize * 0.38;
-      let sx = subX;
-      for (const t of sub) {
-        sx += this.renderSingleToken(ctx, font, t, sx, subY, scriptFontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
-      }
-      maxScriptAdvance = Math.max(0, subWidth - baseWidth);
-    } else {
-      // Standard subscript (or bottom evaluation limit for delimiters)
+    // Special case for \bar / \overline accent
+    const isBarAccent = sup && sup.length === 1 && sup[0].type === 'operator' && sup[0].symbol === '\\bar';
+    if (isBarAccent) {
+      const topY = y - fontSize * 0.72;
+      this.mathRenderer.drawHandLine(ctx, x, topY, x + Math.max(baseWidth, fontSize * 0.45), topY, 1.3, inkColor, 1.2, 2);
       if (sub && sub.length > 0) {
-        const subOffset = isDelimiterScript ? fontSize * 0.70 : fontSize * 0.22;
-        const subY = y + subOffset + (this.noise.random() - 0.5) * 1.5;
-        let sx = startScriptX;
+        const subY = y + fontSize * 0.22 + (this.noise.random() - 0.5) * 1.5;
+        let sx = currX;
         for (const t of sub) {
           sx += this.renderSingleToken(ctx, font, t, sx, subY, scriptFontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
         }
-        maxScriptAdvance = Math.max(maxScriptAdvance, sx - startScriptX);
+        return sx - x;
       }
+      return baseWidth;
+    }
+
+    // Special case for \tilde / \widetilde accent
+    const isTildeAccent = sup && sup.length === 1 && sup[0].type === 'operator' && sup[0].symbol === '\\tilde';
+    if (isTildeAccent) {
+      const topY = y - fontSize * 0.50;
+      this.mathRenderer.drawSim(ctx, x + 1, topY, fontSize * 0.70, inkColor);
+      if (sub && sub.length > 0) {
+        const subY = y + fontSize * 0.22 + (this.noise.random() - 0.5) * 1.5;
+        let sx = currX;
+        for (const t of sub) {
+          sx += this.renderSingleToken(ctx, font, t, sx, subY, scriptFontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
+        }
+        return sx - x;
+      }
+      return baseWidth;
+    }
+
+    // Special case for \underline accent: draw organic underline beneath base
+    const isUnderlineAccent = sup && sup.length === 1 && sup[0].type === 'operator' && sup[0].symbol === '\\underline';
+    if (isUnderlineAccent) {
+      const lineY = y + fontSize * 0.12;
+      this.mathRenderer.drawHandLine(ctx, x, lineY, x + Math.max(baseWidth, fontSize * 0.45), lineY, 1.3, inkColor, 1.2, 2);
+      if (sub && sub.length > 0) {
+        const subY = y + fontSize * 0.28 + (this.noise.random() - 0.5) * 1.5;
+        let sx = currX;
+        for (const t of sub) {
+          sx += this.renderSingleToken(ctx, font, t, sx, subY, scriptFontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
+        }
+        return sx - x;
+      }
+      return baseWidth;
+    }
+
+    // Special case for \dot accent
+    const isDotAccent = sup && sup.length === 1 && sup[0].type === 'operator' && sup[0].symbol === '\\dot';
+    if (isDotAccent) {
+      const centerX = x + baseWidth * 0.5;
+      const topY = y - fontSize * 0.74;
+      ctx.save();
+      ctx.fillStyle = inkColor;
+      ctx.beginPath();
+      ctx.arc(centerX, topY, Math.max(1.0, fontSize * 0.045), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      if (sub && sub.length > 0) {
+        const subY = y + fontSize * 0.22 + (this.noise.random() - 0.5) * 1.5;
+        let sx = currX;
+        for (const t of sub) {
+          sx += this.renderSingleToken(ctx, font, t, sx, subY, scriptFontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
+        }
+        return sx - x;
+      }
+      return baseWidth;
+    }
+
+    // Special case for \ddot accent
+    const isDdotAccent = sup && sup.length === 1 && sup[0].type === 'operator' && sup[0].symbol === '\\ddot';
+    if (isDdotAccent) {
+      const centerX = x + baseWidth * 0.5;
+      const topY = y - fontSize * 0.74;
+      ctx.save();
+      ctx.fillStyle = inkColor;
+      ctx.beginPath();
+      ctx.arc(centerX - 3.5, topY, Math.max(1.0, fontSize * 0.045), 0, Math.PI * 2);
+      ctx.arc(centerX + 3.5, topY, Math.max(1.0, fontSize * 0.045), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      if (sub && sub.length > 0) {
+        const subY = y + fontSize * 0.22 + (this.noise.random() - 0.5) * 1.5;
+        let sx = currX;
+        for (const t of sub) {
+          sx += this.renderSingleToken(ctx, font, t, sx, subY, scriptFontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
+        }
+        return sx - x;
+      }
+      return baseWidth;
+    }
+
+    const isDelimiterScript = typeof base === 'string' && base === '' && Boolean(isBigDelimiter);
+
+    // Standard subscript (or bottom evaluation limit for delimiters)
+    if (sub && sub.length > 0) {
+      const subOffset = isDelimiterScript ? fontSize * 0.70 : fontSize * 0.22;
+      const subY = y + subOffset + (this.noise.random() - 0.5) * 1.5;
+      let sx = startScriptX;
+      for (const t of sub) {
+        sx += this.renderSingleToken(ctx, font, t, sx, subY, scriptFontSize, inkColor, lineProgress, handwriting, roughCanvas, wristState);
+      }
+      maxScriptAdvance = Math.max(maxScriptAdvance, sx - startScriptX);
     }
 
     // Superscript (or top evaluation limit for delimiters)
     if (sup && sup.length > 0) {
-      const supOffset = isDelimiterScript ? fontSize * 1.30 : fontSize * 0.44;
+      const supSpan = this.getTokensVerticalSpan(sup, scriptFontSize);
+      const extraDescent = Math.max(0, supSpan.descent);
+      const supOffset = (isDelimiterScript ? fontSize * 1.30 : fontSize * 0.44) + extraDescent;
       const supY = y - supOffset + (this.noise.random() - 0.5) * 1.5;
       let sx = startScriptX;
       for (const t of sup) {
@@ -2464,7 +2732,10 @@ export class PageEngine {
       maxScriptAdvance = Math.max(maxScriptAdvance, sx - startScriptX);
     }
 
-    return (startScriptX - x) + maxScriptAdvance + 2;
+      return (startScriptX - x) + maxScriptAdvance + 2;
+    } finally {
+      this.mathNestingLevel--;
+    }
   }
 
   /**
@@ -2482,17 +2753,18 @@ export class PageEngine {
     handwriting: AppState['handwriting'],
     roughCanvas: ReturnType<typeof rough.canvas>
   ): number {
-    const isInt = token.symbol === '\\int';
+    const isInt = token.symbol === '\\int' || token.symbol === '\\iint' || token.symbol === '\\iiint' || token.symbol === '\\oint';
     const limitFontSize = fontSize * 0.65;
+    const forceLimits = token.forceLimits;
 
-    if (isInt) {
-      const intWidth = this.mathRenderer.drawIntegral(ctx, x, y, fontSize, inkColor);
+    if (isInt && !forceLimits) {
+      const intWidth = this.mathRenderer.drawIntegral(ctx, x, y, fontSize, inkColor, 1, token.symbol as any);
 
       // Lower limit placed comfortably at bottom-right of lower hook
       let lowerAdvance = 0;
       if (token.lower && token.lower.length > 0) {
         const lowerY = y + fontSize * 0.40 + (this.noise.random() - 0.5) * 1.5;
-        let lx = x + intWidth * 0.48 + (this.noise.random() - 0.5) * 1.5;
+        let lx = x + intWidth * 0.70 + (this.noise.random() - 0.5) * 1.5;
         for (const t of token.lower) {
           lx += this.renderSingleToken(ctx, font, t, lx, lowerY, limitFontSize, inkColor, lineProgress, handwriting, roughCanvas);
         }
@@ -2503,7 +2775,7 @@ export class PageEngine {
       let upperAdvance = 0;
       if (token.upper && token.upper.length > 0) {
         const upperY = y - fontSize * 0.98 + (this.noise.random() - 0.5) * 1.5;
-        let ux = x + intWidth * 0.72 + (this.noise.random() - 0.5) * 1.5;
+        let ux = x + intWidth * 0.82 + (this.noise.random() - 0.5) * 1.5;
         for (const t of token.upper) {
           ux += this.renderSingleToken(ctx, font, t, ux, upperY, limitFontSize, inkColor, lineProgress, handwriting, roughCanvas);
         }
@@ -2511,8 +2783,33 @@ export class PageEngine {
       }
 
       return Math.max(intWidth + 6, lowerAdvance + 6, upperAdvance + 6);
-    } else {
-      // \sum, \prod, \bigcup, or \bigcap
+    } else if (isInt && forceLimits) {
+      // Limits placed centered directly above and below integral (when \int\limits_a^b)
+      const lowerWidth = token.lower ? this.estimateTokensWidth(font, token.lower, limitFontSize) : 0;
+      const upperWidth = token.upper ? this.estimateTokensWidth(font, token.upper, limitFontSize) : 0;
+      const estIntW = token.symbol === '\\iiint' ? 36 : token.symbol === '\\iint' ? 28 : 20;
+      const maxWidth = Math.max(estIntW, lowerWidth, upperWidth);
+      const opX = x + Math.max(0, (maxWidth - estIntW) * 0.5);
+      const intWidth = this.mathRenderer.drawIntegral(ctx, opX, y, fontSize, inkColor, 1, token.symbol as any);
+      const finalMaxWidth = Math.max(intWidth, maxWidth);
+
+      if (token.lower && token.lower.length > 0) {
+        const lowerY = y + fontSize * 0.38;
+        let lx = x + Math.max(0, (finalMaxWidth - lowerWidth) * 0.5);
+        for (const t of token.lower) {
+          lx += this.renderSingleToken(ctx, font, t, lx, lowerY, limitFontSize, inkColor, lineProgress, handwriting, roughCanvas);
+        }
+      }
+      if (token.upper && token.upper.length > 0) {
+        const upperY = y - fontSize * 0.88;
+        let ux = x + Math.max(0, (finalMaxWidth - upperWidth) * 0.5);
+        for (const t of token.upper) {
+          ux += this.renderSingleToken(ctx, font, t, ux, upperY, limitFontSize, inkColor, lineProgress, handwriting, roughCanvas);
+        }
+      }
+      return finalMaxWidth + 6;
+    } else if (!isInt && forceLimits === false) {
+      // Limits on side for \sum\nolimits, \prod\nolimits
       const opWidth =
         token.symbol === '\\sum'
           ? this.mathRenderer.drawSummation(ctx, x, y, fontSize, inkColor, true)
@@ -2522,14 +2819,48 @@ export class PageEngine {
           ? this.mathRenderer.drawCup(ctx, x, y, fontSize, inkColor, true)
           : this.mathRenderer.drawCap(ctx, x, y, fontSize, inkColor, true);
 
+      let lowerAdvance = 0;
+      if (token.lower && token.lower.length > 0) {
+        const lowerY = y + fontSize * 0.22;
+        let lx = x + opWidth + 2;
+        for (const t of token.lower) {
+          lx += this.renderSingleToken(ctx, font, t, lx, lowerY, limitFontSize, inkColor, lineProgress, handwriting, roughCanvas);
+        }
+        lowerAdvance = lx - x;
+      }
+      let upperAdvance = 0;
+      if (token.upper && token.upper.length > 0) {
+        const upperY = y - fontSize * 0.44;
+        let ux = x + opWidth + 2;
+        for (const t of token.upper) {
+          ux += this.renderSingleToken(ctx, font, t, ux, upperY, limitFontSize, inkColor, lineProgress, handwriting, roughCanvas);
+        }
+        upperAdvance = ux - x;
+      }
+      return Math.max(opWidth + 4, lowerAdvance + 4, upperAdvance + 4);
+    } else {
+      // \sum, \prod, \bigcup, or \bigcap: center operator and limits together
       const lowerWidth = token.lower ? this.estimateTokensWidth(font, token.lower, limitFontSize) : 0;
       const upperWidth = token.upper ? this.estimateTokensWidth(font, token.upper, limitFontSize) : 0;
-      const maxWidth = Math.max(opWidth, lowerWidth, upperWidth);
+      const estOpW = fontSize * 0.62;
+      const maxWidth = Math.max(estOpW, lowerWidth, upperWidth);
+      const opX = x + Math.max(0, (maxWidth - estOpW) * 0.5);
+
+      const opWidth =
+        token.symbol === '\\sum'
+          ? this.mathRenderer.drawSummation(ctx, opX, y, fontSize, inkColor, true)
+          : token.symbol === '\\prod'
+          ? this.mathRenderer.drawProduct(ctx, opX, y, fontSize, inkColor, true)
+          : token.symbol === '\\bigcup'
+          ? this.mathRenderer.drawCup(ctx, opX, y, fontSize, inkColor, true)
+          : this.mathRenderer.drawCap(ctx, opX, y, fontSize, inkColor, true);
+
+      const finalMaxWidth = Math.max(opWidth, maxWidth);
 
       // Lower limit centered directly below
       if (token.lower && token.lower.length > 0) {
         const lowerY = y + fontSize * 0.35;
-        let lx = x + Math.max(0, (maxWidth - lowerWidth) * 0.5);
+        let lx = x + Math.max(0, (finalMaxWidth - lowerWidth) * 0.5);
         for (const t of token.lower) {
           lx += this.renderSingleToken(ctx, font, t, lx, lowerY, limitFontSize, inkColor, lineProgress, handwriting, roughCanvas);
         }
@@ -2538,13 +2869,13 @@ export class PageEngine {
       // Upper limit centered directly above
       if (token.upper && token.upper.length > 0) {
         const upperY = y - fontSize * 0.85;
-        let ux = x + Math.max(0, (maxWidth - upperWidth) * 0.5);
+        let ux = x + Math.max(0, (finalMaxWidth - upperWidth) * 0.5);
         for (const t of token.upper) {
           ux += this.renderSingleToken(ctx, font, t, ux, upperY, limitFontSize, inkColor, lineProgress, handwriting, roughCanvas);
         }
       }
 
-      return maxWidth + 6;
+      return finalMaxWidth + 6;
     }
   }
 
@@ -2595,14 +2926,10 @@ export class PageEngine {
       totalMatrixHeight += rh;
     }
 
-    // Binomials center symmetrically around the math axis (y - fontSize * 0.35)
-    // Multi-row general matrices or cases anchor near current line top
-    const bracketTopY = isBinomial
-      ? (y - fontSize * 0.35) - totalMatrixHeight * 0.5 - 2
-      : y - rowSpans[0].ascent - 4;
-    const bracketBottomY = isBinomial
-      ? (y - fontSize * 0.35) + totalMatrixHeight * 0.5 + 2
-      : bracketTopY + totalMatrixHeight + 4;
+    // Center symmetrically around the math axis (y - fontSize * 0.35)
+    const mathAxisY = y - fontSize * 0.35;
+    const bracketTopY = mathAxisY - totalMatrixHeight * 0.5 - 2;
+    const bracketBottomY = mathAxisY + totalMatrixHeight * 0.5 + 2;
 
     // 2. Compute column widths
     const colWidths: number[] = new Array(numCols).fill(24);
@@ -2616,7 +2943,7 @@ export class PageEngine {
       colWidths[c] = maxW + (isBinomial ? 10 : 22);
     }
 
-    const bracketPadding = isBinomial ? 9 : 14;
+    const bracketPadding = bracket === 'none' ? 4 : isBinomial ? 9 : 14;
     const leftBracketX = x;
     const contentStartX = x + bracketPadding;
 
@@ -2635,58 +2962,72 @@ export class PageEngine {
       this.mathRenderer.drawParenthesis(ctx, leftBracketX, bracketTopY, bracketBottomY, true, inkColor, fontSize);
     } else if (bracket === 'v') {
       this.mathRenderer.drawAbsBar(ctx, leftBracketX, bracketTopY, bracketBottomY, inkColor, fontSize);
+    } else if (bracket === 'V') {
+      this.mathRenderer.drawAbsBar(ctx, leftBracketX - 2.5, bracketTopY, bracketBottomY, inkColor, fontSize);
+      this.mathRenderer.drawAbsBar(ctx, leftBracketX + 2.5, bracketTopY, bracketBottomY, inkColor, fontSize);
     } else if (bracket === 'cases') {
       this.mathRenderer.drawBrace(ctx, leftBracketX, bracketTopY, bracketBottomY, true, inkColor, fontSize);
     }
 
     // 4. Render Each Row at Its Accumulated Baseline
-    let cursorY = bracketTopY;
-    for (let r = 0; r < numRows; r++) {
-      const rowBaselineY = cursorY + rowSpans[r].ascent + 4;
-      for (let c = 0; c < numCols; c++) {
-        const cTokens = cells[r][c] || [];
-        if (cTokens.length === 0) continue;
+    this.mathNestingLevel++;
+    try {
+      let cursorY = bracketTopY;
+      for (let r = 0; r < numRows; r++) {
+        const rowBaselineY = cursorY + rowSpans[r].ascent + 4;
+        for (let c = 0; c < numCols; c++) {
+          const cTokens = cells[r][c] || [];
+          if (cTokens.length === 0) continue;
 
-        const cw = this.estimateTokensWidth(font, cTokens, cellFontSize);
-        const colW = colWidths[c];
-        const driftX = (this.noise.random() - 0.5) * 2.5;
-        const driftY = (this.noise.random() - 0.5) * 1.5;
-        // Left-align cases branches; center regular matrix cells
-        const cellX =
-          bracket === 'cases'
-            ? colXPositions[c] + 4 + driftX
-            : colXPositions[c] + Math.max(4, (colW - cw) * 0.5) + driftX;
+          const cw = this.estimateTokensWidth(font, cTokens, cellFontSize);
+          const colW = colWidths[c];
+          const driftX = (this.noise.random() - 0.5) * 2.5;
+          const driftY = (this.noise.random() - 0.5) * 1.5;
+          // Left-align cases branches; center regular matrix cells
+          const cellX =
+            bracket === 'cases'
+              ? colXPositions[c] + 4 + driftX
+              : colXPositions[c] + Math.max(4, (colW - cw) * 0.5) + driftX;
 
-        let cx = cellX;
-        for (const t of cTokens) {
-          cx += this.renderSingleToken(
-            ctx,
-            font,
-            t,
-            cx,
-            rowBaselineY + driftY,
-            cellFontSize,
-            inkColor,
-            lineProgress,
-            handwriting,
-            roughCanvas
-          );
+          let cx = cellX;
+          for (const t of cTokens) {
+            cx += this.renderSingleToken(
+              ctx,
+              font,
+              t,
+              cx,
+              rowBaselineY + driftY,
+              cellFontSize,
+              inkColor,
+              lineProgress,
+              handwriting,
+              roughCanvas
+            );
+          }
         }
+        cursorY += rowSpans[r].height;
       }
-      cursorY += rowSpans[r].height;
+    } finally {
+      this.mathNestingLevel--;
     }
 
-    // 5. Draw Right Enclosure (if not cases)
-    if (bracket !== 'cases') {
+    // 5. Draw Right Enclosure (if not cases and not none)
+    if (bracket !== 'cases' && bracket !== 'none') {
       if (bracket === 'b') {
         this.mathRenderer.drawBracket(ctx, rightBracketX, bracketTopY, bracketBottomY, false, inkColor, fontSize);
       } else if (bracket === 'p') {
         this.mathRenderer.drawParenthesis(ctx, rightBracketX, bracketTopY, bracketBottomY, false, inkColor, fontSize);
       } else if (bracket === 'v') {
         this.mathRenderer.drawAbsBar(ctx, rightBracketX, bracketTopY, bracketBottomY, inkColor, fontSize);
+      } else if (bracket === 'V') {
+        this.mathRenderer.drawAbsBar(ctx, rightBracketX - 2.5, bracketTopY, bracketBottomY, inkColor, fontSize);
+        this.mathRenderer.drawAbsBar(ctx, rightBracketX + 2.5, bracketTopY, bracketBottomY, inkColor, fontSize);
       }
     }
 
+    if (bracket === 'none') {
+      return totalContentWidth + bracketPadding * 2;
+    }
     return bracket === 'cases'
       ? totalContentWidth + bracketPadding + 12
       : isBinomial
@@ -2762,9 +3103,9 @@ export class PageEngine {
     roughCanvas: ReturnType<typeof rough.canvas>
   ): number {
     const span = this.getTokensVerticalSpan(content, fontSize);
-    const padX = 14;
-    const padTop = 10;
-    const padBottom = 10;
+    const padX = 10;
+    const padTop = 6;
+    const padBottom = 6;
 
     let cx = x + padX;
     for (const t of content) {
@@ -2807,10 +3148,11 @@ export class PageEngine {
       boxHeight,
       fontSize,
       inkColor,
-      handwriting
+      handwriting,
+      false
     );
 
-    return totalBoxWidth + 14;
+    return totalBoxWidth + 8;
   }
 
   /**
@@ -2837,7 +3179,7 @@ export class PageEngine {
         ctx,
         font,
         boxedToken.content,
-        startX + 12,
+        startX + 8,
         y,
         fontSize,
         inkColor,
@@ -2845,15 +3187,15 @@ export class PageEngine {
         handwriting,
         roughCanvas
       );
-      const totalHeight = span.ascent + span.descent + 20;
-      return Math.max(BASE_LINE_HEIGHT * 1.8, totalHeight + BASE_LINE_HEIGHT * 0.6);
+      const totalHeight = span.ascent + span.descent + 12;
+      return Math.max(BASE_LINE_HEIGHT * 1.3, totalHeight + BASE_LINE_HEIGHT * 0.3);
     }
 
     // Otherwise render sequence and wrap entire answer block in box/oval/underline
     const span = this.getTokensVerticalSpan(tokens, fontSize);
-    const padX = 18;
-    const padTop = 12;
-    const padBottom = 12;
+    const padX = 14;
+    const padTop = 8;
+    const padBottom = 8;
 
     const seqResult = this.renderTokenSequence(
       ctx,
@@ -2869,9 +3211,9 @@ export class PageEngine {
     );
 
     const estWidth = this.estimateTokensWidth(font, tokens, fontSize);
-    const totalBoxWidth = Math.max(seqResult.width, estWidth) + padX * 2 + 10;
+    const totalBoxWidth = Math.max(seqResult.width, estWidth) + padX * 2 + 6;
     const boxTopY = y - span.ascent - padTop;
-    const boxHeight = Math.max(span.ascent + span.descent + padTop + padBottom, seqResult.height + 14);
+    const boxHeight = span.ascent + span.descent + padTop + padBottom;
 
     if (
       this.mainPageCtx &&
@@ -2902,10 +3244,11 @@ export class PageEngine {
       boxHeight,
       fontSize,
       inkColor,
-      handwriting
+      handwriting,
+      true
     );
 
-    return Math.max(BASE_LINE_HEIGHT * 1.8, boxHeight + BASE_LINE_HEIGHT * 0.6);
+    return Math.max(BASE_LINE_HEIGHT * 1.3, boxHeight + BASE_LINE_HEIGHT * 0.3);
   }
 
   /**
@@ -2945,7 +3288,8 @@ export class PageEngine {
     wristState?: WristClusterState,
     extraSlant?: number,
     isMathContext = false,
-    isColdStart = false
+    isColdStart = false,
+    isFunction = false
   ): number {
     const pageSlant = this.getPageSlantOffset(startX, y, lineProgress, handwriting.handFatigue ?? 0.2);
     const effectiveExtraSlant = (extraSlant ?? 0) + pageSlant;
@@ -2957,17 +3301,19 @@ export class PageEngine {
       };
       const segments = text.match(/[A-Za-z]+|[^A-Za-z]+/g) || [text];
       let segX = startX;
-      const defaultPen = this.currentPen || {
-        bodyColorPreset: 'blue',
-        headingColorPreset: 'red',
-        bodyColorHex: inkColor,
-        headingColorHex: inkColor,
-        penStyle: 'ballpoint',
-        strokeWidth: 1.6,
-        inkPooling: true,
-        drySkips: false,
-        headingUnderline: 'single',
-      };
+      const defaultPen: AppState['pen'] = this.currentPen
+        ? { ...this.currentPen, bodyColorHex: inkColor }
+        : {
+            bodyColorPreset: 'blue',
+            headingColorPreset: 'red',
+            bodyColorHex: inkColor,
+            headingColorHex: inkColor,
+            penStyle: 'ballpoint',
+            strokeWidth: 1.6,
+            inkPooling: true,
+            drySkips: false,
+            headingUnderline: 'single',
+          };
       for (const seg of segments) {
         if (/^[A-Za-z]+$/.test(seg) && this.cursiveEngine.canRenderWordSegment(seg, this.currentAllographs, handwriting.cursiveStyle)) {
           const runW = this.cursiveEngine.renderCursiveRun(
@@ -3020,7 +3366,7 @@ export class PageEngine {
                 { ...handwriting, cursiveMode: 'print' },
                 roughCanvas,
                 wristState,
-                effectiveExtraSlant,
+                extraSlant,
                 false,
                 isColdStart && segX === startX
               );
@@ -3055,7 +3401,7 @@ export class PageEngine {
             { ...handwriting, cursiveMode: 'print' },
             roughCanvas,
             wristState,
-            effectiveExtraSlant,
+            extraSlant,
             false,
             isColdStart && segX === startX
           );
@@ -3079,6 +3425,7 @@ export class PageEngine {
       // Opposing-Crescent Math Variable 'x' ):(
       if (
         isMathContext &&
+        !isFunction &&
         (handwriting.cursiveMathX ?? true) &&
         char === 'x' &&
         !/^[a-zA-Z]{3,}$/.test(text)
@@ -3089,8 +3436,28 @@ export class PageEngine {
         continue;
       }
 
-      // Procedural Calculus Primes: ', '', ′ (rapid diagonal down-left ticks)
+      // Procedural Apostrophe (prose) vs Calculus Primes (math context: ', '', ′)
       if (char === '\'' || char === '′') {
+        if (!isMathContext && char === '\'') {
+          // Authentic handwritten prose apostrophe (curved hanging flick at ascender height)
+          const scale = fontSize / 28;
+          const apoX = currX + 1.5 * scale;
+          const apoY = y - fontSize * 0.62;
+          ctx.save();
+          ctx.strokeStyle = inkColor;
+          ctx.lineWidth = Math.max(1.1, 1.4 * scale);
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(apoX + 1.5 * scale, apoY);
+          ctx.quadraticCurveTo(apoX + 0.5 * scale, apoY + 3.5 * scale, apoX - 0.5 * scale, apoY + 5.5 * scale);
+          ctx.stroke();
+          ctx.restore();
+          currX += 5 * scale + (handwriting.letterSpacing ?? 0);
+          prevChar = '\'';
+          continue;
+        }
+
+        // Procedural Calculus Primes for math context (y', y'', y''')
         const isDoublePrime = i + 1 < text.length && (text[i + 1] === '\'' || text[i + 1] === '′');
         const primeW = this.mathRenderer.drawHandPrime(ctx, currX, y, fontSize, inkColor, isDoublePrime ? 2 : 1);
         currX += primeW;
@@ -3140,6 +3507,68 @@ export class PageEngine {
         const ineqW = this.mathRenderer.drawInequality(ctx, currX, y, fontSize, inkColor, false);
         currX += ineqW;
         prevChar = '≥';
+        continue;
+      }
+      if (char === '√') {
+        const scale = fontSize / 28;
+        const radW = 12 * scale;
+        const radH = fontSize * 0.75;
+        this.mathRenderer.drawSquareRoot(ctx, roughCanvas, currX, y, radW, radH, fontSize, inkColor);
+        currX += radW + 8 * scale + (handwriting.letterSpacing ?? 0);
+        prevChar = '√';
+        continue;
+      }
+      if (char === '≈') {
+        currX += this.mathRenderer.drawApprox(ctx, currX, y, fontSize, inkColor) + (handwriting.letterSpacing ?? 0);
+        prevChar = '≈';
+        continue;
+      }
+      if (char === '→') {
+        currX += this.mathRenderer.drawArrow(ctx, currX, y, fontSize, inkColor) + (handwriting.letterSpacing ?? 0);
+        prevChar = '→';
+        continue;
+      }
+      if (char === '·') {
+        currX += this.mathRenderer.drawDot(ctx, currX, y, fontSize, inkColor) + (handwriting.letterSpacing ?? 0);
+        prevChar = '·';
+        continue;
+      }
+      if (char === '²' || char === '³' || char === '⁴') {
+        const supDigit = char === '²' ? '2' : char === '³' ? '3' : '4';
+        const supSize = fontSize * 0.65;
+        const supY = y - fontSize * 0.40;
+        const digitW = this.renderWordOrChars(
+          ctx,
+          font,
+          supDigit,
+          currX,
+          supY,
+          supSize,
+          inkColor,
+          lineProgress,
+          { ...handwriting, cursiveMode: 'print' },
+          roughCanvas,
+          undefined,
+          extraSlant,
+          true
+        );
+        currX += digitW + 1 + (handwriting.letterSpacing ?? 0);
+        prevChar = char;
+        continue;
+      }
+      if (char === '±') {
+        currX += this.mathRenderer.drawPlusMinus(ctx, currX, y, fontSize, inkColor) + (handwriting.letterSpacing ?? 0);
+        prevChar = '±';
+        continue;
+      }
+      if (char === '×') {
+        currX += this.mathRenderer.drawTimes(ctx, currX, y, fontSize, inkColor) + (handwriting.letterSpacing ?? 0);
+        prevChar = '×';
+        continue;
+      }
+      if (char === '≠') {
+        currX += this.mathRenderer.drawNotEqual(ctx, currX, y, fontSize, inkColor) + (handwriting.letterSpacing ?? 0);
+        prevChar = '≠';
         continue;
       }
       if (char === 'δ') {
@@ -3240,6 +3669,126 @@ export class PageEngine {
       if (char === 'Γ') {
         currX += this.mathRenderer.drawGamma(ctx, currX, y, fontSize, inkColor);
         prevChar = 'Γ';
+        continue;
+      }
+      if (char === 'ξ') {
+        currX += this.mathRenderer.drawXi(ctx, currX, y, fontSize, inkColor);
+        prevChar = 'ξ';
+        continue;
+      }
+      if (char === 'ε') {
+        currX += this.mathRenderer.drawEpsilon(ctx, currX, y, fontSize, inkColor);
+        prevChar = 'ε';
+        continue;
+      }
+      if (char === 'γ') {
+        currX += this.mathRenderer.drawGammaLower(ctx, currX, y, fontSize, inkColor);
+        prevChar = 'γ';
+        continue;
+      }
+      if (char === 'ρ') {
+        currX += this.mathRenderer.drawRho(ctx, currX, y, fontSize, inkColor);
+        prevChar = 'ρ';
+        continue;
+      }
+      if (char === 'η') {
+        currX += this.mathRenderer.drawEta(ctx, currX, y, fontSize, inkColor);
+        prevChar = 'η';
+        continue;
+      }
+      if (char === 'ψ') {
+        currX += this.mathRenderer.drawPsi(ctx, currX, y, fontSize, inkColor);
+        prevChar = 'ψ';
+        continue;
+      }
+      if (char === 'ζ') {
+        currX += this.mathRenderer.drawZeta(ctx, currX, y, fontSize, inkColor);
+        prevChar = 'ζ';
+        continue;
+      }
+      if (char === 'κ') {
+        currX += this.mathRenderer.drawKappa(ctx, currX, y, fontSize, inkColor);
+        prevChar = 'κ';
+        continue;
+      }
+      if (char === 'ν') {
+        currX += this.mathRenderer.drawNu(ctx, currX, y, fontSize, inkColor);
+        prevChar = 'ν';
+        continue;
+      }
+      if (char === 'χ') {
+        currX += this.mathRenderer.drawChi(ctx, currX, y, fontSize, inkColor);
+        prevChar = 'χ';
+        continue;
+      }
+      if (char === 'Σ') {
+        currX += this.mathRenderer.drawSigmaUpper(ctx, currX, y, fontSize, inkColor);
+        prevChar = 'Σ';
+        continue;
+      }
+      if (char === 'Ω') {
+        currX += this.mathRenderer.drawOmegaUpper(ctx, currX, y, fontSize, inkColor);
+        prevChar = 'Ω';
+        continue;
+      }
+      if (char === 'Φ') {
+        currX += this.mathRenderer.drawPhiUpper(ctx, currX, y, fontSize, inkColor);
+        prevChar = 'Φ';
+        continue;
+      }
+      if (char === 'Ψ') {
+        currX += this.mathRenderer.drawPsiUpper(ctx, currX, y, fontSize, inkColor);
+        prevChar = 'Ψ';
+        continue;
+      }
+      if (char === 'Θ') {
+        currX += this.mathRenderer.drawThetaUpper(ctx, currX, y, fontSize, inkColor);
+        prevChar = 'Θ';
+        continue;
+      }
+      if (char === 'Λ') {
+        currX += this.mathRenderer.drawLambdaUpper(ctx, currX, y, fontSize, inkColor);
+        prevChar = 'Λ';
+        continue;
+      }
+      if (char === 'Π') {
+        currX += this.mathRenderer.drawPiUpper(ctx, currX, y, fontSize, inkColor);
+        prevChar = 'Π';
+        continue;
+      }
+      if (char === 'ℏ') {
+        currX += this.mathRenderer.drawHbar(ctx, currX, y, fontSize, inkColor);
+        prevChar = 'ℏ';
+        continue;
+      }
+      if (char === 'ℱ') {
+        currX += this.mathRenderer.drawFourierF(ctx, currX, y, fontSize, inkColor);
+        prevChar = 'ℱ';
+        continue;
+      }
+      if (char === '∂') {
+        currX += this.mathRenderer.drawPartial(ctx, currX, y, fontSize, inkColor);
+        prevChar = '∂';
+        continue;
+      }
+      if (char === '⇔') {
+        currX += this.mathRenderer.drawIff(ctx, currX, y, fontSize, inkColor);
+        prevChar = '⇔';
+        continue;
+      }
+      if (char === '∉') {
+        currX += this.mathRenderer.drawNotElementOf(ctx, currX, y, fontSize, inkColor);
+        prevChar = '∉';
+        continue;
+      }
+      if (char === '≃') {
+        currX += this.mathRenderer.drawSimeq(ctx, currX, y, fontSize, inkColor);
+        prevChar = '≃';
+        continue;
+      }
+      if (char === '⊤') {
+        currX += this.mathRenderer.drawTop(ctx, currX, y, fontSize, inkColor);
+        prevChar = '⊤';
         continue;
       }
 
@@ -3397,7 +3946,7 @@ export class PageEngine {
       }
 
       // Pseudo-cursive / Semi-cursive coarticulation bridge
-      if (prevChar && prevExitPoint && result.entryPoint) {
+      if (prevChar && prevExitPoint && result.entryPoint && handwriting.cursiveMode !== 'print') {
         const isCursiveOrSemi = handwriting.cursiveMode === 'semi-cursive' || !handwriting.cursiveMode;
         const NO_JOIN_AFTER = new Set(['g', 'j', 'p', 'q', 'x', 'z', 's']);
         const isPrevLower = prevChar >= 'a' && prevChar <= 'z';
@@ -3486,7 +4035,14 @@ export class PageEngine {
         char === 'τ' || char === '∈' || char === '<' || char === '>' || char === '≤' ||
         char === '≥' || char === 'θ' || char === 'π' || char === 'β' || char === 'λ' ||
         char === 'φ' || char === 'ϕ' || char === 'ω' || char === 'μ' || char === 'σ' ||
-        char === '∞' || char === 'Γ'
+        char === '∞' || char === 'Γ' || char === 'ξ' || char === 'ε' || char === 'γ' ||
+        char === 'ρ' || char === 'η' || char === 'ψ' || char === 'ζ' || char === 'κ' ||
+        char === 'ν' || char === 'χ' || char === 'Σ' || char === 'Ω' || char === 'Φ' ||
+        char === 'Ψ' || char === 'Θ' || char === 'Λ' || char === 'Π' || char === 'ℏ' ||
+        char === 'ℱ' || char === '∂' || char === '⇔' || char === '∉' || char === '≃' ||
+        char === '⊤' || char === '√' || char === '≈' || char === '→' || char === '·' ||
+        char === '²' || char === '³' || char === '⁴' || char === '±' || char === '×' ||
+        char === '≠'
       ) {
         width += fontSize * 0.60 + letterSpacing;
         continue;
@@ -3508,7 +4064,12 @@ export class PageEngine {
       const isIsolatedVar = token.text.length === 1 && /^[a-zA-Z]$/.test(token.text) && !token.isFunction;
       return this.measureWord(font, token.text, fontSize, letterSpacing, isIsolatedVar);
     }
-    if (token.type === 'delimiter') return 10;
+    if (token.type === 'delimiter') {
+      const scale = fontSize / 28;
+      const ch = token.char;
+      if (ch === '⟨' || ch === '⟩' || ch === '⌊' || ch === '⌋' || ch === '⌈' || ch === '⌉') return 12 * scale;
+      return 10 * scale;
+    }
     if (token.type === 'operator') {
       const scale = fontSize / 28;
       if (token.symbol.startsWith("'")) return (2 + token.symbol.length * 4.2) * scale;
@@ -3517,7 +4078,9 @@ export class PageEngine {
       if (token.symbol === '=') return 20 * scale;
       if (token.symbol === '⇒') return 26 * scale;
       if (token.symbol === '\\sum' || token.symbol === '\\prod') return 24 * scale;
-      if (token.symbol === '\\int') return 18 * scale;
+      if (token.symbol === '\\int' || token.symbol === '\\oint') return 18 * scale;
+      if (token.symbol === '\\iint') return 26 * scale;
+      if (token.symbol === '\\iiint') return 34 * scale;
       if (token.symbol === '≠' || token.symbol === '≈') return 18 * scale;
       if (token.symbol === '≤' || token.symbol === '≥' || token.symbol === '<' || token.symbol === '>') return 18 * scale;
       if (
@@ -3539,12 +4102,13 @@ export class PageEngine {
       return 18 * scale;
     }
     if (token.type === 'big-op') {
-      const isInt = token.symbol === '\\int';
+      const isInt = token.symbol === '\\int' || token.symbol === '\\iint' || token.symbol === '\\iiint' || token.symbol === '\\oint';
+      const intBaseW = token.symbol === '\\iiint' ? 40 : token.symbol === '\\iint' ? 32 : 24;
       const limitW = Math.max(
         token.lower ? this.estimateTokensWidth(font, token.lower, fontSize * 0.65) : 0,
         token.upper ? this.estimateTokensWidth(font, token.upper, fontSize * 0.65) : 0
       );
-      return isInt ? 24 + limitW : Math.max(24, limitW) + 12;
+      return isInt ? intBaseW + limitW : Math.max(24, limitW) + 12;
     }
     if (token.type === 'matrix') {
       let numCols = 1;
@@ -3552,7 +4116,7 @@ export class PageEngine {
         if (row.length > numCols) numCols = row.length;
       }
       const isBinomial = token.bracket === 'p' && token.cells.length === 2 && numCols <= 1;
-      let totalW = isBinomial ? 18 : 32;
+      let totalW = token.bracket === 'none' ? 12 : isBinomial ? 18 : 32;
       for (let c = 0; c < numCols; c++) {
         let maxW = 18;
         for (const row of token.cells) {
@@ -3587,7 +4151,13 @@ export class PageEngine {
         token.sup &&
         token.sup.length === 1 &&
         token.sup[0].type === 'operator' &&
-        (token.sup[0].symbol === '^' || token.sup[0].symbol === '\\vec');
+        (token.sup[0].symbol === '^' ||
+          token.sup[0].symbol === '\\vec' ||
+          token.sup[0].symbol === '\\bar' ||
+          token.sup[0].symbol === '\\tilde' ||
+          token.sup[0].symbol === '\\dot' ||
+          token.sup[0].symbol === '\\ddot' ||
+          token.sup[0].symbol === '\\underline');
       const sw = token.sup && !isAccentSup ? this.estimateTokensWidth(font, token.sup, fontSize * 0.70) : 0;
       const subw = token.sub ? this.estimateTokensWidth(font, token.sub, fontSize * 0.70) : 0;
       if (isUnderBase) {

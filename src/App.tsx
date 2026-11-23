@@ -53,7 +53,7 @@ export const App: React.FC = () => {
         baselineWave: 0.44,
         marginWander: 0.48,
         handFatigue: 0.45,
-        scratchOutRate: 0.014,
+        scratchOutRate: 0.003,
         randomSeed: 4242,
         circledQuestionLabels: false,
         answerBubbleStyle: 'box',
@@ -75,7 +75,7 @@ export const App: React.FC = () => {
         headingColorPreset: 'blue',
         headingColorHex: '#122046', // Solid deep navy heading
         penStyle: 'ballpoint',
-        strokeWidth: 1.6,
+        strokeWidth: 1.45,
         headingUnderline: 'single',
         drySkips: true,
         inkPooling: true,
@@ -83,8 +83,8 @@ export const App: React.FC = () => {
       paper: {
         template: 'unruled-bond', // Chitesh's blank unruled notebook
         scanFilter: 'camscanner', // Authentic CamScanner Magic Color with sensor grain & Hermite edge
-        inkBleed: 0.03, // Subtle reverse-page ghosting
-        shadowIntensity: 0.24, // Natural smartphone corner shadow & ambient illumination
+        inkBleed: 0.04, // Subtle reverse-page ghosting
+        shadowIntensity: 0.28, // Natural smartphone corner shadow & ambient illumination
         perspectiveTilt: 0.16, // Subtle camera perspective skew & page curl
         showPaperTexture: true, // Physical paper pulp fibers & micro-creases
         showMarginGuides: false, // No ruled lines, clean blank sheet
@@ -126,6 +126,13 @@ export const App: React.FC = () => {
       return {};
     }
   });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__scriptamath_appState = appState;
+      (window as any).__scriptamath_setAppState = setAppState;
+    }
+  }, [appState]);
 
   // Page Engine instance
   const pageEngine = useMemo(() => {

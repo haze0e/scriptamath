@@ -31,7 +31,20 @@ export function parseAIStudentizerResponse(input: string): ParsedAIStudentizer {
     if (m) marginNote = m[1].trim();
   }
 
-  const mainWork = mainWorkMatch ? mainWorkMatch[1].trim() : text;
+  let mainWork: string;
+  if (mainWorkMatch) {
+    mainWork = mainWorkMatch[1].trim();
+  } else {
+    // If [MAIN_WORK] is absent, strip [METADATA] and [ROUGH_WORK] if present
+    let cleaned = text;
+    if (metadataMatch) {
+      cleaned = cleaned.replace(/\[METADATA\][\s\S]*?(?=\[ROUGH_WORK\]|$)/i, '').trim();
+    }
+    if (roughWorkMatch) {
+      cleaned = cleaned.replace(/\[ROUGH_WORK\][\s\S]*$/i, '').trim();
+    }
+    mainWork = cleaned;
+  }
   const roughWork = roughWorkMatch
     ? roughWorkMatch[1]
         .split('\n')

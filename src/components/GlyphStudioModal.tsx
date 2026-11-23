@@ -176,7 +176,7 @@ export const GlyphStudioModal: React.FC<GlyphStudioModalProps> = ({
 
   const handleSaveCurrentVariant = () => {
     const newLib = { ...currentLib };
-    if (!newLib[selectedChar]) newLib[selectedChar] = [];
+    newLib[selectedChar] = [...(currentLib[selectedChar] || [])];
 
     if (currentStrokesRef.current.length === 0) {
       newLib[selectedChar] = newLib[selectedChar].filter(

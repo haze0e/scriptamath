@@ -102,7 +102,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenStudentizer, onOpenHistory
                 <div className="font-semibold text-blue-400 mb-1">
                   1. Real 2D Handwritten Math AST (No Flat Single-Line Math)
                 </div>
-                Parses fractions ($\frac&#123;num&#125;&#123;den&#125;$), roots ($\sqrt&#123;x&#125;$), integrals ($\int$), and boxed answers into spatial 2D structures with hand-drawn roughjs vinculums and imperfect equals signs.
+                Parses fractions (a/b), roots (√x), integrals (∫), and boxed answers into spatial 2D structures with hand-drawn roughjs vinculums and imperfect equals signs.
               </div>
 
               <div className="bg-[#181d2a] p-3 rounded-lg border border-[#262d42]">
@@ -116,7 +116,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenStudentizer, onOpenHistory
                 <div className="font-semibold text-blue-400 mb-1">
                   3. Human Biomechanics &amp; Coarticulation Physics
                 </div>
-                Simulates initial-letter focus, mid-word acceleration, flying $i$/$j$ tittles, shared double-$tt$ crossbars, pseudo-cursive air-drag ligatures, and right-margin word squeezing.
+                Simulates initial-letter focus, mid-word acceleration, flying i/j tittles, shared double-tt crossbars, pseudo-cursive air-drag ligatures, and right-margin word squeezing.
               </div>
 
               <div className="bg-[#181d2a] p-3 rounded-lg border border-[#262d42]">

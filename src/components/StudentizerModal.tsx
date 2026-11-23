@@ -73,7 +73,7 @@ export const StudentizerModal: React.FC<StudentizerModalProps> = ({
       rawInput: parsed.mainWork || prev.rawInput,
       paper: {
         ...prev.paper,
-        roughWorkColumn: true,
+        roughWorkColumn: parsed.roughWork.length > 0,
         customRoughWork:
           parsed.roughWork.length > 0 ? parsed.roughWork : prev.paper.customRoughWork,
         marginAnnotation: parsed.marginNote || prev.paper.marginAnnotation,

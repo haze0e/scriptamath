@@ -8,6 +8,8 @@ export function getPaperRuleOriginY(template: PaperTemplateId, topMargin: number
 export class InkAndScanPipeline {
   private noise: SeededNoise;
   private scratchCanvas: HTMLCanvasElement | null = null;
+  private cornerSrcCanvas: HTMLCanvasElement | null = null;
+  private cornerBlurCanvas: HTMLCanvasElement | null = null;
 
   constructor(noise: SeededNoise) {
     this.noise = noise;
@@ -24,6 +26,28 @@ export class InkAndScanPipeline {
     return this.scratchCanvas;
   }
 
+  private getCornerSrcCanvas(width: number, height: number): HTMLCanvasElement {
+    if (!this.cornerSrcCanvas) {
+      this.cornerSrcCanvas = document.createElement('canvas');
+    }
+    if (this.cornerSrcCanvas.width !== width || this.cornerSrcCanvas.height !== height) {
+      this.cornerSrcCanvas.width = width;
+      this.cornerSrcCanvas.height = height;
+    }
+    return this.cornerSrcCanvas;
+  }
+
+  private getCornerBlurCanvas(width: number, height: number): HTMLCanvasElement {
+    if (!this.cornerBlurCanvas) {
+      this.cornerBlurCanvas = document.createElement('canvas');
+    }
+    if (this.cornerBlurCanvas.width !== width || this.cornerBlurCanvas.height !== height) {
+      this.cornerBlurCanvas.width = width;
+      this.cornerBlurCanvas.height = height;
+    }
+    return this.cornerBlurCanvas;
+  }
+
   /**
    * Draws realistic college notebook paper backgrounds.
    */
@@ -34,7 +58,9 @@ export class InkAndScanPipeline {
     paper: PaperScanSettings,
     pageIndex: number,
     lineHeight: number,
-    topMargin: number
+    topMargin: number,
+    penColor?: string,
+    fontFamily?: string
   ) {
     ctx.save();
 
@@ -73,7 +99,7 @@ export class InkAndScanPipeline {
 
     // Template specific ruling lines & margins
     if (paper.template === 'indian-ruled') {
-      this.drawIndianCollegeRuled(ctx, width, height, lineHeight, topMargin, pageIndex, paper);
+      this.drawIndianCollegeRuled(ctx, width, height, lineHeight, topMargin, pageIndex, paper, penColor, fontFamily);
     } else if (paper.template === 'engineering-graph') {
       this.drawEngineeringGraph(ctx, width, height);
     } else if (paper.template === 'exam-booklet') {
@@ -222,7 +248,9 @@ export class InkAndScanPipeline {
     lineHeight: number,
     topMargin: number,
     pageIndex: number,
-    paper: PaperScanSettings
+    paper: PaperScanSettings,
+    penColor?: string,
+    fontFamily?: string
   ) {
     const pageMarginDrift = (Math.sin((pageIndex + 1) * 7.13 + 1.2) * 4.2) + (Math.cos((pageIndex + 1) * 4.31) * 2.8);
     const leftMarginX1 = 150 + pageMarginDrift;
@@ -280,8 +308,9 @@ export class InkAndScanPipeline {
     ctx.fillText('Date:', headerBoxX + 12, headerBoxY + 56);
 
     // Handwritten-style page number and date inside header box
-    ctx.fillStyle = '#1b3b8c'; // Blue ink
-    ctx.font = 'bold 15px Caveat, cursive';
+    ctx.fillStyle = penColor || '#1b3b8c';
+    const activeFamily = fontFamily ? `${fontFamily}, Caveat, cursive` : 'Caveat, cursive';
+    ctx.font = `bold 16px ${activeFamily}`;
     ctx.fillText(`${pageIndex + 1}`, headerBoxX + 90, headerBoxY + 23);
     const dateDisplay = paper.dateStr || new Date().toISOString().slice(0, 10);
     ctx.fillText(dateDisplay, headerBoxX + 70, headerBoxY + 57);
@@ -634,13 +663,14 @@ export class InkAndScanPipeline {
     width: number,
     height: number,
     paper: PaperScanSettings,
-    pageIndex: number = 0
+    pageIndex: number = 0,
+    skipScannerFilter = false
   ) {
     // 1. Apply Scanner Contrast Filter FIRST (so it doesn't bleach out shadows & grain)
-    if (paper.scanFilter !== 'original') {
+    if (!skipScannerFilter && paper.scanFilter !== 'original') {
       const awbJitter = (Math.sin(pageIndex * 2.7) * 0.04) + (this.noise.random() - 0.5) * 0.03;
       const effectiveWarmth = Math.max(0, Math.min(1.0, (paper.paperWarmth ?? 0) + awbJitter));
-      this.applyScannerFilter(ctx, width, height, paper.scanFilter, effectiveWarmth, pageIndex);
+      this.applyScannerFilter(ctx, width, height, paper.scanFilter, effectiveWarmth, pageIndex, paper.template);
     }
 
     // 2. Re-apply subtle physical paper fiber grain OVER the whitened scan
@@ -760,9 +790,9 @@ export class InkAndScanPipeline {
     const imgData = ctx.getImageData(0, 0, w, h);
     const d = imgData.data;
 
-    for (let y = 0; y < h; y += 2) {
+    for (let y = 0; y < h; y += 1) {
       const rowOffset = y * w * 4;
-      for (let x = 0; x < w; x += 2) {
+      for (let x = 0; x < w; x += 1) {
         const i = rowOffset + x * 4;
         const a = d[i + 3];
         if (a > 30 && a < 235) {
@@ -795,6 +825,7 @@ export class InkAndScanPipeline {
 
     ctx.save();
     // 1. Subtle desk matte + contact drop shadow behind lifted sheet
+    const isBwXerox = paper?.scanFilter === 'bw-xerox';
     if (paper?.deskEdgeShadow ?? true) {
       const deskAngle = (Math.PI * 0.25) + (this.noise.random() - 0.5) * 0.30;
       const dx1 = width * 0.5 - Math.cos(deskAngle) * width * 0.6;
@@ -803,11 +834,16 @@ export class InkAndScanPipeline {
       const dy2 = height * 0.5 + Math.sin(deskAngle) * height * 0.6;
 
       const deskGrad = ctx.createLinearGradient(dx1, dy1, dx2, dy2);
-      deskGrad.addColorStop(0, '#cfc9be');
-      deskGrad.addColorStop(1, '#b8b1a4');
+      if (isBwXerox) {
+        deskGrad.addColorStop(0, '#e5e5e5');
+        deskGrad.addColorStop(1, '#d0d0d0');
+      } else {
+        deskGrad.addColorStop(0, '#cfc9be');
+        deskGrad.addColorStop(1, '#b8b1a4');
+      }
       ctx.fillStyle = deskGrad;
     } else {
-      ctx.fillStyle = '#ebe9e2';
+      ctx.fillStyle = isBwXerox ? '#f0f0f0' : '#ebe9e2';
     }
     ctx.fillRect(0, 0, width, height);
 
@@ -822,7 +858,14 @@ export class InkAndScanPipeline {
     ctx.scale(baseScale, baseScale);
     ctx.translate(-cx, -cy);
 
-    // Contact shadow underneath sheet (matches tilt and varies per page)
+    // 2. Strip-wise Cylindrical Spine Curl + Projective Trapezoidal Taper parameters
+    const stripW = 8;
+    const spineSpan = Math.min(280, width * (0.12 + 0.10 * intensity + (this.noise.random() - 0.5) * 0.05));
+    const maxSpineLift = (9 + this.noise.random() * 8) * intensity;
+    const topTrapInset = width * (0.007 + this.noise.random() * 0.015) * intensity;
+    const yawTilt = (this.noise.random() - 0.5) * 0.006 * intensity;
+
+    // Contact shadow underneath sheet (matches actual trapezoidal + spine-curved path)
     if (paper?.deskEdgeShadow ?? true) {
       ctx.save();
       const shadowAlpha = (0.28 + this.noise.random() * 0.10) * intensity;
@@ -831,16 +874,25 @@ export class InkAndScanPipeline {
       ctx.shadowOffsetX = (4 + this.noise.random() * 5) * intensity;
       ctx.shadowOffsetY = (6 + this.noise.random() * 5) * intensity;
       ctx.fillStyle = '#fcfbf8';
-      ctx.fillRect(0, 0, width, height);
+
+      ctx.beginPath();
+      for (let sx = 0; sx <= width; sx += 20) {
+        const uSpine = Math.max(0, 1 - sx / spineSpan);
+        const spineLiftY = -maxSpineLift * Math.pow(uSpine, 2.2);
+        const xNorm = sx / width - 0.5;
+        const topShiftX = -xNorm * topTrapInset;
+        const px = sx + topShiftX;
+        const py = spineLiftY;
+        if (sx === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.lineTo(width - 0.5 * topTrapInset, 0);
+      ctx.lineTo(width, height);
+      ctx.lineTo(0, height);
+      ctx.closePath();
+      ctx.fill();
       ctx.restore();
     }
-
-    // 2. Strip-wise Cylindrical Spine Curl + Projective Trapezoidal Taper
-    const stripW = 8;
-    const spineSpan = Math.min(280, width * (0.12 + 0.10 * intensity + (this.noise.random() - 0.5) * 0.05));
-    const maxSpineLift = (9 + this.noise.random() * 8) * intensity;
-    const topTrapInset = width * (0.007 + this.noise.random() * 0.015) * intensity;
-    const yawTilt = (this.noise.random() - 0.5) * 0.006 * intensity;
 
     for (let sx = 0; sx < width; sx += stripW) {
       const sw = Math.min(stripW + 1, width - sx);
@@ -876,23 +928,26 @@ export class InkAndScanPipeline {
 
     ctx.save();
     // Organic sheet-to-sheet bleed opacity fluctuation
-    const effectiveAlpha = bleedAmount * (0.09 + this.noise.random() * 0.05);
+    const effectiveAlpha = bleedAmount * (0.08 + this.noise.random() * 0.04);
     ctx.globalAlpha = effectiveAlpha;
+    // Ink bleeding through cellulose pulp is naturally diffused/blurred
+    ctx.filter = 'blur(1.8px)';
 
     // Horizontally flipped ghosting with per-page registration shifts:
-    // Vertical drift: 12px to 30px
-    // Horizontal drift: ±8px
-    // Slight rotational registration drift: ±0.25°
-    const dy = 12 + this.noise.random() * 18;
-    const dx = (this.noise.random() - 0.5) * 16;
+    // Vertical shift of 42px to 78px so reverse-page text doesn't align with front lines
+    // Horizontal drift: ±12px
+    // Slight scale transform & rotational drift so reverse page doesn't clone exact bounding boxes
+    const dy = 42 + this.noise.random() * 36;
+    const dx = (this.noise.random() - 0.5) * 24;
     const rotAngle = (this.noise.random() - 0.5) * 0.008;
+    const scaleFactor = 1.008;
 
     const cx = width * 0.5;
     const cy = height * 0.5;
 
     ctx.translate(cx + dx, cy + dy);
     ctx.rotate(rotAngle);
-    ctx.scale(-1, 1);
+    ctx.scale(-scaleFactor, scaleFactor);
     ctx.translate(-cx, -cy);
 
     ctx.drawImage(bleedCanvas, 0, 0, width, height);
@@ -1057,13 +1112,14 @@ export class InkAndScanPipeline {
    * - CamScanner Magic Color: whitened paper + boosted saturated blue ink
    * - B&W Xerox: high-contrast monochrome
    */
-  private applyScannerFilter(
+  public applyScannerFilter(
     ctx: CanvasRenderingContext2D,
     width: number,
     height: number,
     filter: ScanFilter,
     paperWarmth: number = 0,
-    pageIndex: number = 0
+    pageIndex: number = 0,
+    paperTemplate?: PaperTemplateId
   ) {
     const imgData = ctx.getImageData(0, 0, width, height);
     const d = imgData.data;
@@ -1091,7 +1147,8 @@ export class InkAndScanPipeline {
           const r = d[i];
           const g = d[i + 1];
           const b = d[i + 2];
-          const grain = (this.noise.random() - 0.5) * 3.5;
+          const h = ((x * 12345 + y * 67891) ^ (x << 4)) & 0xff;
+          const grain = (h - 128) * (3.5 / 128.0);
           const lum = 0.299 * r + 0.587 * g + 0.114 * b + lightWaveY;
 
           // Preserve authentic fluorescent/pastel study highlighters (CamScanner Magic Color logic)
@@ -1107,8 +1164,9 @@ export class InkAndScanPipeline {
             continue;
           }
 
-          // Preserve light ruling blue lines before ink darkening curve
-          if (b > r + 15 && lum > 170) {
+          // Preserve light ruling blue lines strictly on ruled templates (without tinting pen strokes)
+          const isRuledSheet = paperTemplate === 'indian-ruled' || paperTemplate === 'exam-booklet';
+          if (isRuledSheet && r >= 160 && r <= 195 && g >= 190 && g <= 220 && b >= 220 && (b - r) >= 42 && (g - r) >= 18 && lum >= 180 && lum <= 220) {
             d[i] = 175;
             d[i + 1] = 202;
             d[i + 2] = 232;
@@ -1215,47 +1273,86 @@ export class InkAndScanPipeline {
   ) {
     const cornerR = Math.ceil(Math.min(width, height) * (0.13 + this.noise.random() * 0.05));
     const pad = 8;
-    const tempCanvas = this.getScratchCanvas(cornerR + pad * 2, cornerR + pad * 2);
-    const tempCtx = tempCanvas.getContext('2d');
-    if (!tempCtx) return;
-
-    // Sample background paper color near top-left so blur doesn't sample transparent black
-    const samplePx = ctx.getImageData(Math.min(width - 1, 20), Math.min(height - 1, 20), 1, 1).data;
-    const paperBg = `rgb(${samplePx[0]},${samplePx[1]},${samplePx[2]})`;
     const blurPx = (0.9 + this.noise.random() * 0.4).toFixed(1);
 
-    // 1. Top-left corner
-    tempCtx.fillStyle = paperBg;
-    tempCtx.fillRect(0, 0, cornerR + pad * 2, cornerR + pad * 2);
-    tempCtx.drawImage(ctx.canvas, 0, 0, cornerR, cornerR, pad, pad, cornerR, cornerR);
-    ctx.save();
-    ctx.filter = `blur(${blurPx}px)`;
-    ctx.beginPath();
-    ctx.arc(0, 0, cornerR, 0, Math.PI * 2);
-    ctx.clip();
-    ctx.drawImage(tempCanvas, pad, pad, cornerR, cornerR, 0, 0, cornerR, cornerR);
-    ctx.restore();
+    const srcCanvas = this.getCornerSrcCanvas(cornerR + pad * 2, cornerR + pad * 2);
+    const srcCtx = srcCanvas.getContext('2d');
+    const blurCanvas = this.getCornerBlurCanvas(cornerR, cornerR);
+    const blurCtx = blurCanvas.getContext('2d');
+    if (!srcCtx || !blurCtx) return;
 
-    // 2. Bottom-right corner
-    tempCtx.fillStyle = paperBg;
-    tempCtx.fillRect(0, 0, cornerR + pad * 2, cornerR + pad * 2);
-    tempCtx.drawImage(
-      ctx.canvas,
-      width - cornerR,
-      height - cornerR,
-      cornerR,
-      cornerR,
-      pad,
-      pad,
-      cornerR,
-      cornerR
-    );
-    ctx.save();
-    ctx.filter = `blur(${blurPx}px)`;
-    ctx.beginPath();
-    ctx.arc(width, height, cornerR, 0, Math.PI * 2);
-    ctx.clip();
-    ctx.drawImage(tempCanvas, pad, pad, cornerR, cornerR, width - cornerR, height - cornerR, cornerR, cornerR);
-    ctx.restore();
+    // Apply smooth feathered lens softness across all 4 corners (TL, TR, BL, BR)
+    const corners = [
+      {
+        srcX: 0,
+        srcY: 0,
+        gradX: 0,
+        gradY: 0,
+        sampleX: Math.round(cornerR * 0.75),
+        sampleY: Math.round(cornerR * 0.75),
+      },
+      {
+        srcX: width - cornerR,
+        srcY: 0,
+        gradX: cornerR,
+        gradY: 0,
+        sampleX: Math.round(width - 1 - cornerR * 0.75),
+        sampleY: Math.round(cornerR * 0.75),
+      },
+      {
+        srcX: 0,
+        srcY: height - cornerR,
+        gradX: 0,
+        gradY: cornerR,
+        sampleX: Math.round(cornerR * 0.75),
+        sampleY: Math.round(height - 1 - cornerR * 0.75),
+      },
+      {
+        srcX: width - cornerR,
+        srcY: height - cornerR,
+        gradX: cornerR,
+        gradY: cornerR,
+        sampleX: Math.round(width - 1 - cornerR * 0.75),
+        sampleY: Math.round(height - 1 - cornerR * 0.75),
+      },
+    ];
+
+    for (const c of corners) {
+      // Sample background paper color inside each corner (away from desk margins & spiral holes)
+      const samplePx = ctx.getImageData(
+        Math.max(0, Math.min(width - 1, c.sampleX)),
+        Math.max(0, Math.min(height - 1, c.sampleY)),
+        1,
+        1
+      ).data;
+      const paperBg = `rgb(${samplePx[0]},${samplePx[1]},${samplePx[2]})`;
+
+      // 1. Prepare source canvas with edge padding
+      srcCtx.save();
+      srcCtx.fillStyle = paperBg;
+      srcCtx.fillRect(0, 0, cornerR + pad * 2, cornerR + pad * 2);
+      srcCtx.drawImage(ctx.canvas, c.srcX, c.srcY, cornerR, cornerR, pad, pad, cornerR, cornerR);
+      srcCtx.restore();
+
+      // 2. Blur the corner onto dedicated blur canvas
+      blurCtx.clearRect(0, 0, cornerR, cornerR);
+      blurCtx.filter = `blur(${blurPx}px)`;
+      blurCtx.drawImage(srcCanvas, pad, pad, cornerR, cornerR, 0, 0, cornerR, cornerR);
+      blurCtx.filter = 'none';
+
+      // 3. Feathered radial gradient mask from corner outwards
+      const grad = blurCtx.createRadialGradient(c.gradX, c.gradY, cornerR * 0.20, c.gradX, c.gradY, cornerR);
+      grad.addColorStop(0, 'rgba(0, 0, 0, 1)');
+      grad.addColorStop(0.65, 'rgba(0, 0, 0, 0.6)');
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+      blurCtx.globalCompositeOperation = 'destination-in';
+      blurCtx.fillStyle = grad;
+      blurCtx.fillRect(0, 0, cornerR, cornerR);
+      blurCtx.globalCompositeOperation = 'source-over';
+
+      // 4. Composite back onto main canvas
+      ctx.drawImage(blurCanvas, c.srcX, c.srcY);
+    }
   }
 }
